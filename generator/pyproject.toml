@@ -4,4 +4,10 @@ version = "0.1.0"
 description = "Add your description here"
 readme = "README.md"
 requires-python = ">=3.12"
-dependencies = []
+dependencies = [
+    "aiohttp>=3.12.12",
+    "feedparser>=6.0.11",
+    "lxml-html-clean>=0.4.2",
+    "newspaper3k>=0.2.8",
+    "rss-parser>=2.1.0",
+]
