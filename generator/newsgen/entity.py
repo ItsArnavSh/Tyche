@@ -8,7 +8,7 @@ class NewsArticle:
     metadata: str
     content: str
     timestamp: datetime
-
+    url:str
 def convertToNewsArticle(article: Article) -> NewsArticle:
     publish_date = article.publish_date
     if isinstance(publish_date, str):
@@ -23,5 +23,6 @@ def convertToNewsArticle(article: Article) -> NewsArticle:
         title=article.title,
         metadata=article.meta_description or "",
         content=article.text,
-        timestamp=publish_date
+        timestamp=publish_date,
+        url=""
     )
