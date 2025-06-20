@@ -2,9 +2,9 @@ version: "2"
 sql:
   - engine: "postgresql"
     schema:
-      - "database/migrations/000001_init_schema.up.sql"
+      - "database/migrations/0001_testing.up.sql"
     queries:
-      - "database/queries.sql"
+      - "database/queries/*.sql"
     gen:
       go:
         out: "database/gen"
