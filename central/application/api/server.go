@@ -3,6 +3,7 @@ package server
 import (
 	"central/application/services/newsparser"
 	"central/application/util/entity"
+	"central/application/util/pyinterface"
 	"context"
 
 	"github.com/spf13/viper"
@@ -16,6 +17,10 @@ func StartServer(ctx context.Context, logger zap.Logger) {
 
 		go newsparser.PollFeed(ctx, logger, rssFeedUrl, NewsUrls)
 	}
-
-	newsparser.NewsConsumer(ctx, NewsUrls, logger)
+	pycli, err := pyinterface.NewPyClient(ctx, &logger)
+	if err != nil {
+		logger.Error("Could Not Connect to Python GRPC", zap.Error(err))
+		return
+	}
+	newsparser.NewsConsumer(ctx, NewsUrls, logger, pycli)
 }

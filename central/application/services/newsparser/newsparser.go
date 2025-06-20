@@ -2,6 +2,7 @@ package newsparser
 
 import (
 	"central/application/util/entity"
+	"central/application/util/pyinterface"
 	"context"
 	"io"
 	"net/http"
@@ -36,7 +37,7 @@ func PollFeed(ctx context.Context, logger zap.Logger, url string, resChan chan<-
 		}
 		newSeen := make(map[string]struct{})
 		items := rssFeed.Items
-		for i := len(items); i >= 0; i-- {
+		for i := len(items) - 1; i >= 0; i-- {
 			item := items[i]
 			newSeen[item.Link] = struct{}{}
 			if _, alredySeen := seen[item.Link]; alredySeen {
@@ -55,7 +56,7 @@ func PollFeed(ctx context.Context, logger zap.Logger, url string, resChan chan<-
 	}
 }
 
-func NewsConsumer(ctx context.Context, newChannel <-chan entity.NewsChanEntry, logger zap.Logger) {
+func NewsConsumer(ctx context.Context, newChannel <-chan entity.NewsChanEntry, logger zap.Logger, pycli *pyinterface.PyClient) {
 	for {
 		select {
 		case <-ctx.Done():
@@ -63,12 +64,8 @@ func NewsConsumer(ctx context.Context, newChannel <-chan entity.NewsChanEntry, l
 			return
 
 		case news := <-newChannel:
-			logger.Info("New article received",
-				zap.String("title", news.Title),
-				zap.String("url", news.Url),
-				zap.String("published", news.PubDate),
-			)
-
+			article, _ := pycli.CallParseNewsArticle(ctx, news.Url)
+			logger.Info(article.Content)
 		}
 	}
 }

@@ -1,4 +1,4 @@
-from newspaper import Article
+from newspaper import Article, article
 from dataclasses import dataclass
 
 from proto import pythonservice_pb2
@@ -6,18 +6,15 @@ from proto import pythonservice_pb2
 
 def fetchArticle(url: str) -> pythonservice_pb2.ParseNewsArticleResponse:
     try:
-        article = Article(url)
-        article.download()
-        article.parse()
-        article.nlp()  # optional: generates summary, keywords
+        page = Article(url)
+        page.download()
+        page.parse()
 
         return pythonservice_pb2.ParseNewsArticleResponse(
-            provider=article.source_url or "Unknown",
-            metadata=", ".join(article.keywords)
-            if hasattr(article, "keywords")
-            else "",
-            headline=article.title or "",
-            content=article.text or "",
+            provider="",
+            metadata=page.meta_description,
+            headline=page.title,
+            content=page.text,
         )
 
     except Exception as e:
