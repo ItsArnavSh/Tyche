@@ -64,8 +64,10 @@ func NewsConsumer(ctx context.Context, newChannel <-chan entity.NewsChanEntry, l
 			return
 
 		case news := <-newChannel:
-			article, _ := pycli.CallParseNewsArticle(ctx, news.Url)
-			logger.Info(article.Content)
+			//article, _ := pycli.CallParseNewsArticle(ctx, news.Url)
+			//logger.Info(article.Content)
+			logger.Info(news.PubDate)
+
 		}
 	}
 }

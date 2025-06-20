@@ -3,6 +3,7 @@ package main
 import (
 	server "central/application/api"
 	setup "central/config"
+	"central/database"
 	"context"
 	"fmt"
 	"os"
@@ -23,5 +24,7 @@ func main() {
 	if err != nil {
 		logger.Error("Conifg Failed to Load", zap.Error(err))
 	}
-	server.StartServer(ctx, *logger)
+	db, _ := databasehandler.DbConnection()
+	logger.Info("Connected to database")
+	server.StartServer(ctx, *logger, db)
 }

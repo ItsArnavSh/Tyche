@@ -5,12 +5,13 @@ import (
 	"central/application/util/entity"
 	"central/application/util/pyinterface"
 	"context"
+	"database/sql"
 
 	"github.com/spf13/viper"
 	"go.uber.org/zap"
 )
 
-func StartServer(ctx context.Context, logger zap.Logger) {
+func StartServer(ctx context.Context, logger zap.Logger, database *sql.DB) {
 	rssFeedURLs := viper.GetStringSlice("rssFeeds")
 	NewsUrls := make(chan entity.NewsChanEntry)
 	for _, rssFeedUrl := range rssFeedURLs {

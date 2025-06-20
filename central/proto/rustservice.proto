@@ -1,9 +1,9 @@
 syntax = "proto3";
-package rust_service.v1;
+package pb;
 
 import "google/protobuf/empty.proto"; // Assuming you're returning google.protobuf.Empty
 
-option go_package = "github.com/arnavsharma/central/gen/go/rustservicepb";
+option go_package = "central/proto/pb";
 
 service RustService {
   rpc SendStockData(SendStockDataRequest) returns (google.protobuf.Empty);
