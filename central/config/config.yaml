@@ -11,3 +11,20 @@ docker:
   redis:
     host: localhost
     port: 6379
+
+rssFeeds:
+  - https://economictimes.indiatimes.com/markets/rssfeeds/1977021501.cms
+  - https://timesofindia.indiatimes.com/rssfeeds/296589292.cms
+  - https://www.thehindu.com/news/international/feeder/default.rss
+  - https://www.livemint.com/rss/money
+  - https://feeds.bbci.co.uk/news/world/rss.xml
+  - https://www.cnbctv18.com/commonfeeds/v1/cne/rss/economy.xml
+  - https://www.thehindubusinessline.com/markets/feeder/default.rss
+  - https://feeds.feedburner.com/ndtvprofit-latest
+  - https://www.cnbc.com/id/100727362/device/rss/rss.html
+  - http://rss.cnn.com/rss/cnn_topstories.rss
+  - https://rss.nytimes.com/services/xml/rss/nyt/World.xml
+  - https://abcnews.go.com/abcnews/internationalheadlines
+  - https://www.thehindu.com/news/national/feeder/default.rss
+  - https://www.thehindu.com/business/Industry/feeder/default.rss
+  - https://www.thehindu.com/business/Economy/feeder/default.rss
