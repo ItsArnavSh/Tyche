@@ -1,2 +1,2 @@
-proto/pythonservicepbconnect
+proto/*connect
 proto/*.go
