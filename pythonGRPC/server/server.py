@@ -3,6 +3,7 @@ import proto.pythonservice_pb2 as pb2
 import proto.pythonservice_pb2_grpc as pb2_grpc
 from services.newspaper import fetchArticle
 from sentence_transformers import SentenceTransformer
+from services.wordprocessor import generateKeywords
 
 
 class PythonUtilServicer(pb2_grpc.PythonUtilServicer):
@@ -17,6 +18,11 @@ class PythonUtilServicer(pb2_grpc.PythonUtilServicer):
         return pb2.GenerateEmbeddingsResponse(
             embeddings=self.emb.encode(request.content)
         )
+
+    async def GenerateKeywords(self, request, context):
+        text = request.content
+        keywords = generateKeywords(text)
+        return pb2.GenerateKeywordsResponse(keywords=keywords)
 
 
 async def serve():

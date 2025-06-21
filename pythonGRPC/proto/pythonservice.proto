@@ -1,7 +1,7 @@
 syntax = "proto3";
-package pb;
+package PythonService;
 
-option go_package = "central/proto/pb";
+option go_package = "github.com/arnavsharma/central/gen/go/pythonservicepb";
 service PythonUtil {
   rpc ParseNewsArticle(ParseNewsArticleRequest) returns (ParseNewsArticleResponse);
   rpc GenerateEmbeddings(GenerateEmbeddingsRequest) returns (GenerateEmbeddingsResponse);

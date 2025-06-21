@@ -3,6 +3,7 @@ package newsparser
 import (
 	"central/application/util/entity"
 	"central/application/util/pyinterface"
+	database "central/database/gen"
 	"context"
 	"io"
 	"net/http"
@@ -13,7 +14,17 @@ import (
 	"go.uber.org/zap"
 )
 
-func PollFeed(ctx context.Context, logger zap.Logger, url string, resChan chan<- entity.NewsChanEntry) {
+type NewsStruct struct {
+	db       *database.Queries
+	logger   zap.Logger
+	pyclient pyinterface.PyClient
+}
+
+func NewNewsStruct(ctx context.Context, logger zap.Logger, pyclient pyinterface.PyClient, db *database.Queries) (NewsStruct, error) {
+	return NewsStruct{db: db, logger: logger, pyclient: pyclient}, nil
+}
+
+func (n *NewsStruct) PollFeed(ctx context.Context, logger zap.Logger, url string, resChan chan<- entity.NewsChanEntry) {
 	fp := rss.Parser{}
 	ticker := time.NewTicker(time.Minute)
 	defer ticker.Stop()
@@ -56,17 +67,17 @@ func PollFeed(ctx context.Context, logger zap.Logger, url string, resChan chan<-
 	}
 }
 
-func NewsConsumer(ctx context.Context, newChannel <-chan entity.NewsChanEntry, logger zap.Logger, pycli *pyinterface.PyClient) {
+func (n *NewsStruct) NewsConsumer(ctx context.Context, newChannel <-chan entity.NewsChanEntry) {
 	for {
 		select {
 		case <-ctx.Done():
-			logger.Info("News consumer shutting down")
+			n.logger.Info("News consumer shutting down")
 			return
 
 		case news := <-newChannel:
 			//article, _ := pycli.CallParseNewsArticle(ctx, news.Url)
 			//logger.Info(article.Content)
-			logger.Info(news.PubDate)
+			n.logger.Info(news.PubDate)
 
 		}
 	}

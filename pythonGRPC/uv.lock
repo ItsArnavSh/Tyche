@@ -84,6 +84,15 @@ wheels = [
 ]
 
 [[package]]
+name = "anyascii"
+version = "0.3.2"
+source = { registry = "https://pypi.org/simple" }
+sdist = { url = "https://files.pythonhosted.org/packages/9f/52/93b9ea99063f7cf37fb67f5e3f49480686cbe7f228c48b9d713326223b6e/anyascii-0.3.2.tar.gz", hash = "sha256:9d5d32ef844fe225b8bc7cba7f950534fae4da27a9bf3a6bea2cb0ea46ce4730", size = 214052, upload-time = "2023-03-16T00:24:42.431Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/4f/7b/a9a747e0632271d855da379532b05a62c58e979813814a57fa3b3afeb3a4/anyascii-0.3.2-py3-none-any.whl", hash = "sha256:3b3beef6fc43d9036d3b0529050b0c48bfad8bc960e9e562d7223cfb94fe45d4", size = 289923, upload-time = "2023-03-16T00:24:39.649Z" },
+]
+
+[[package]]
 name = "attrs"
 version = "25.3.0"
 source = { registry = "https://pypi.org/simple" }
@@ -168,6 +177,17 @@ source = { registry = "https://pypi.org/simple" }
 sdist = { url = "https://files.pythonhosted.org/packages/d8/53/6f443c9a4a8358a93a6792e2acffb9d9d5cb0a5cfd8802644b7b1c9a02e4/colorama-0.4.6.tar.gz", hash = "sha256:08695f5cb7ed6e0531a20572697297273c47b8cae5a63ffc6d6ed5c201be6e44", size = 27697, upload-time = "2022-10-25T02:36:22.414Z" }
 wheels = [
     { url = "https://files.pythonhosted.org/packages/d1/d6/3965ed04c63042e047cb6a3e6ed1a63a35087b6a609aa3a15ed8ac56c221/colorama-0.4.6-py2.py3-none-any.whl", hash = "sha256:4f1d9991f5acc0ca119f9d443620b77f9d6b33703e51011c16baf57afb285fc6", size = 25335, upload-time = "2022-10-25T02:36:20.889Z" },
+]
+
+[[package]]
+name = "contractions"
+version = "0.1.73"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "textsearch" },
+]
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/bb/e4/725241b788963b460ce0118bfd5c505dd3d1bdd020ee740f9f39044ed4a7/contractions-0.1.73-py2.py3-none-any.whl", hash = "sha256:398cee3b69c37307a50dce4930d961a0f42b48fdae9562df73bed5683008d3bc", size = 8651, upload-time = "2022-11-15T14:05:54.573Z" },
 ]
 
 [[package]]
@@ -291,8 +311,10 @@ dependencies = [
     { name = "grpcio-tools" },
     { name = "lxml-html-clean" },
     { name = "newspaper3k" },
+    { name = "nltk" },
     { name = "rss-parser" },
     { name = "sentence-transformers" },
+    { name = "text-prettifier" },
 ]
 
 [package.metadata]
@@ -303,8 +325,10 @@ requires-dist = [
     { name = "grpcio-tools", specifier = ">=1.73.0" },
     { name = "lxml-html-clean", specifier = ">=0.4.2" },
     { name = "newspaper3k", specifier = ">=0.2.8" },
+    { name = "nltk", specifier = ">=3.9.1" },
     { name = "rss-parser", specifier = ">=2.1.0" },
     { name = "sentence-transformers", specifier = ">=4.1.0" },
+    { name = "text-prettifier", specifier = ">=2.0.1" },
 ]
 
 [[package]]
@@ -409,6 +433,15 @@ source = { registry = "https://pypi.org/simple" }
 sdist = { url = "https://files.pythonhosted.org/packages/f1/70/7703c29685631f5a7590aa73f1f1d3fa9a380e654b86af429e0934a32f7d/idna-3.10.tar.gz", hash = "sha256:12f65c9b470abda6dc35cf8e63cc574b1c52b11df2c86030af0ac09b01b13ea9", size = 190490, upload-time = "2024-09-15T18:07:39.745Z" }
 wheels = [
     { url = "https://files.pythonhosted.org/packages/76/c6/c88e154df9c4e1a2a66ccf0005a88dfb2650c1dffb6f5ce603dfbd452ce3/idna-3.10-py3-none-any.whl", hash = "sha256:946d195a0d259cbba61165e88e65941f16e9b36ea6ddb97f00452bae8b1287d3", size = 70442, upload-time = "2024-09-15T18:07:37.964Z" },
+]
+
+[[package]]
+name = "internet-words-remover"
+version = "3.1.3"
+source = { registry = "https://pypi.org/simple" }
+sdist = { url = "https://files.pythonhosted.org/packages/d6/1c/b0a691183fa2aafd55dd6ff12f95b13f14f98d5f06142736fb71fc6e0039/internet_words_remover-3.1.3.tar.gz", hash = "sha256:bbbf66a8d0761787d37d11959d4f434a987a9e4eec7d7b699fdf8ed2a8ebad18", size = 7938, upload-time = "2024-06-21T16:12:41.453Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/d4/88/6b8bdfe023d08268651ba1db6262d670346609f268f1b2bf3fd37e64cca6/internet_words_remover-3.1.3-py3-none-any.whl", hash = "sha256:651f8b4bf999143db49ce12364a443309a74e707bc53c12b9146971e7f92d694", size = 9066, upload-time = "2024-06-21T16:12:39.585Z" },
 ]
 
 [[package]]
@@ -943,6 +976,24 @@ wheels = [
 ]
 
 [[package]]
+name = "pyahocorasick"
+version = "2.2.0"
+source = { registry = "https://pypi.org/simple" }
+sdist = { url = "https://files.pythonhosted.org/packages/68/4b/e3bee663803e2202be984e1291084355f064dfa3a6a632e01fe496445a5c/pyahocorasick-2.2.0.tar.gz", hash = "sha256:817f302088400a1402bf2f8631fdb21cf5a2666888e0d6a7d5a3ad556212e9da", size = 103916, upload-time = "2025-06-19T05:51:28.087Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/97/a6/b88ab854348f8449a544a435abb270ed65ed5b77ceada372ef9e998f367c/pyahocorasick-2.2.0-cp312-cp312-macosx_10_13_universal2.whl", hash = "sha256:744f63790fc4d337e129c80d28f57e6ba4d22a4b7e065825c72e98f92a77e16b", size = 58174, upload-time = "2025-06-19T05:51:07.874Z" },
+    { url = "https://files.pythonhosted.org/packages/b7/e3/6aa83f4f2852d03ce28872c139580913532a85686fc49f5136e4a7efce23/pyahocorasick-2.2.0-cp312-cp312-macosx_11_0_arm64.whl", hash = "sha256:73bb94c5621565c5ad22d2f44d45edc7e568de5bd629d22a435e76d7023dae4e", size = 33285, upload-time = "2025-06-19T05:51:09.431Z" },
+    { url = "https://files.pythonhosted.org/packages/4c/e5/088c0169c36581d961eb24d770a3c0a48b95d029fd12fa343f7c1a28c11f/pyahocorasick-2.2.0-cp312-cp312-manylinux_2_17_x86_64.manylinux2014_x86_64.whl", hash = "sha256:4c3fb6406b3311319bef625f0269af276b75f834e5cba33b81f2e8c35a9c6c91", size = 114871, upload-time = "2025-06-19T05:51:10.513Z" },
+    { url = "https://files.pythonhosted.org/packages/66/e5/d3198bba8ce7cdf4c946f71a15bf75b26e2796b805ad43041a0ea77c422d/pyahocorasick-2.2.0-cp312-cp312-musllinux_1_2_x86_64.whl", hash = "sha256:346f92c0086589e44c279d1519187bd3421d94836875033b27b7730f11bc923e", size = 117872, upload-time = "2025-06-19T05:51:11.859Z" },
+    { url = "https://files.pythonhosted.org/packages/55/15/ebd27c91dcb49487f8032e6046c11bee9037c793eb045a87d4df40c0af60/pyahocorasick-2.2.0-cp312-cp312-win_amd64.whl", hash = "sha256:1dbc761cdf8c9a1b85f065fb2442c234b742203df8e3cd2f38fc45e4838b02d3", size = 35028, upload-time = "2025-06-19T05:51:12.936Z" },
+    { url = "https://files.pythonhosted.org/packages/89/8c/d62a60af6025bc02ef2d25f29f93c591c06f4e43e51b2127f9a4a0954eb8/pyahocorasick-2.2.0-cp313-cp313-macosx_10_13_universal2.whl", hash = "sha256:54c9604d73051f96c2d5a6c267f404f3d2d02790a2680a0c0ee7069ef7660d8b", size = 58177, upload-time = "2025-06-19T05:51:13.999Z" },
+    { url = "https://files.pythonhosted.org/packages/41/97/b3cf05d0a3e545ce38a10c828fb188500a31261b679fd15ef717147eadee/pyahocorasick-2.2.0-cp313-cp313-macosx_11_0_arm64.whl", hash = "sha256:57932f7e894107d5ddf011051feb081b0ff7fdd6ab94462ead0c4c716ffdbd47", size = 33285, upload-time = "2025-06-19T05:51:15.687Z" },
+    { url = "https://files.pythonhosted.org/packages/d6/44/b1cd7d1b35a5f77b45b5694def4a8e6560b44cafc0dce12b7dc19a609dbe/pyahocorasick-2.2.0-cp313-cp313-manylinux_2_17_x86_64.manylinux2014_x86_64.whl", hash = "sha256:67c4489c2615fc4a25824d1f12c9e775d84c2207eecedde273bbffd479d82e71", size = 114812, upload-time = "2025-06-19T05:51:17.146Z" },
+    { url = "https://files.pythonhosted.org/packages/61/48/862fc0d3c92aa70a7c1721aa41460b8ac0a8d2e62aab039773c9b8d0c9d9/pyahocorasick-2.2.0-cp313-cp313-musllinux_1_2_x86_64.whl", hash = "sha256:3f388b66e8973e8ac7cd7db7f90c56b2aaec4b5563b6da7bfc3e973b7ea34e1d", size = 117865, upload-time = "2025-06-19T05:51:18.619Z" },
+    { url = "https://files.pythonhosted.org/packages/1f/e3/7680654f2d5e06ed7df9c7e6387cf86ed48c670fc65d64924a9a03ccb0e7/pyahocorasick-2.2.0-cp313-cp313-win_amd64.whl", hash = "sha256:8eabbd6fcd65595d36dadc3fc57d536aa302833991cd6b0b872aae60c5eac3e9", size = 35021, upload-time = "2025-06-19T05:51:19.79Z" },
+]
+
+[[package]]
 name = "pydantic"
 version = "2.11.7"
 source = { registry = "https://pypi.org/simple" }
@@ -1265,6 +1316,33 @@ dependencies = [
 sdist = { url = "https://files.pythonhosted.org/packages/83/d3/803453b36afefb7c2bb238361cd4ae6125a569b4db67cd9e79846ba2d68c/sympy-1.14.0.tar.gz", hash = "sha256:d3d3fe8df1e5a0b42f0e7bdf50541697dbe7d23746e894990c030e2b05e72517", size = 7793921, upload-time = "2025-04-27T18:05:01.611Z" }
 wheels = [
     { url = "https://files.pythonhosted.org/packages/a2/09/77d55d46fd61b4a135c444fc97158ef34a095e5681d0a6c10b75bf356191/sympy-1.14.0-py3-none-any.whl", hash = "sha256:e091cc3e99d2141a0ba2847328f5479b05d94a6635cb96148ccb3f34671bd8f5", size = 6299353, upload-time = "2025-04-27T18:04:59.103Z" },
+]
+
+[[package]]
+name = "text-prettifier"
+version = "2.0.1"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "contractions" },
+    { name = "internet-words-remover" },
+    { name = "nltk" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/10/eb/8beb41c7b0a12e6114a441edf297a9791de52dc3963ddfd749cd989ab94b/text_prettifier-2.0.1.tar.gz", hash = "sha256:cf5ba304308814481de759bdeba3328ae282ebf5e1de1557477f8df76b4e3846", size = 12217, upload-time = "2025-05-12T21:35:21.512Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/3a/cb/58d105a5735a206591f8c316bcec3b118be39e1fdd5c6d6f733a729c5b92/text_prettifier-2.0.1-py3-none-any.whl", hash = "sha256:4821c69bd2df7170293c88c3daad457e92d4af5cd35aa970e99222d3c4776e42", size = 11088, upload-time = "2025-05-12T21:35:20.566Z" },
+]
+
+[[package]]
+name = "textsearch"
+version = "0.0.24"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "anyascii" },
+    { name = "pyahocorasick" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/5e/7c/18ab4807196aac89a114a98732462436cbd48db16873dc4669087f354bc7/textsearch-0.0.24.tar.gz", hash = "sha256:2d23b5c3116715b65bccc18bc870ecc236ec8480d48cd5f257cc60bf66bb241a", size = 49755, upload-time = "2022-09-02T14:04:42.124Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/e2/0f/6f08dd89e9d71380a369b1f5b6c97a32d62fc9cfacc1c5b8329505b9e495/textsearch-0.0.24-py2.py3-none-any.whl", hash = "sha256:1bbc4cc36300fbf0bbaa865500f84e907c85f6a48faf37da6e098407b405ed09", size = 7606, upload-time = "2022-09-02T14:04:40.105Z" },
 ]
 
 [[package]]

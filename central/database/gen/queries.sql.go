@@ -108,7 +108,7 @@ func (q *Queries) GetWordID(ctx context.Context, word string) (int32, error) {
 
 const insertFreq = `-- name: InsertFreq :exec
 INSERT INTO invertedindex (word_id, lid, freq)
-VALUES ($1, $2, $3)
+VALUES ($1, $2, $3)  
 ON CONFLICT (word_id, lid)
 DO UPDATE SET freq = EXCLUDED.freq
 `
@@ -124,15 +124,15 @@ func (q *Queries) InsertFreq(ctx context.Context, arg InsertFreqParams) error {
 	return err
 }
 
-const insertOrGetWord = `-- name: InsertOrGetWord :one
+const insertWord = `-- name: InsertWord :one
 INSERT INTO dictionary (word, dfi)
 VALUES ($1, 0)
 ON CONFLICT (word) DO NOTHING
 RETURNING word_id
 `
 
-func (q *Queries) InsertOrGetWord(ctx context.Context, word string) (int32, error) {
-	row := q.db.QueryRowContext(ctx, insertOrGetWord, word)
+func (q *Queries) InsertWord(ctx context.Context, word string) (int32, error) {
+	row := q.db.QueryRowContext(ctx, insertWord, word)
 	var word_id int32
 	err := row.Scan(&word_id)
 	return word_id, err
@@ -157,14 +157,19 @@ func (q *Queries) UpsertVector(ctx context.Context, arg UpsertVectorParams) erro
 
 const upsertWordAndIncrementDFI = `-- name: UpsertWordAndIncrementDFI :one
 INSERT INTO dictionary (word, dfi)
-VALUES ($1, 1)
+VALUES ($1, $2)
 ON CONFLICT (word)
-DO UPDATE SET dfi = dictionary.dfi + 1
+DO UPDATE SET dfi = dictionary.dfi + $2
 RETURNING word_id
 `
 
-func (q *Queries) UpsertWordAndIncrementDFI(ctx context.Context, word string) (int32, error) {
-	row := q.db.QueryRowContext(ctx, upsertWordAndIncrementDFI, word)
+type UpsertWordAndIncrementDFIParams struct {
+	Word string `json:"word"`
+	Dfi  int32  `json:"dfi"`
+}
+
+func (q *Queries) UpsertWordAndIncrementDFI(ctx context.Context, arg UpsertWordAndIncrementDFIParams) (int32, error) {
+	row := q.db.QueryRowContext(ctx, upsertWordAndIncrementDFI, arg.Word, arg.Dfi)
 	var word_id int32
 	err := row.Scan(&word_id)
 	return word_id, err

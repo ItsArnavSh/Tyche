@@ -5,12 +5,14 @@ go 1.23.0
 require (
 	connectrpc.com/connect v1.18.1
 	github.com/golang-migrate/migrate/v4 v4.18.3
+	github.com/google/uuid v1.6.0
 	github.com/lib/pq v1.10.9
 	github.com/mmcdole/gofeed v1.3.0
 	github.com/spf13/viper v1.20.1
 	go.uber.org/zap v1.27.0
 	google.golang.org/grpc v1.73.0
 	google.golang.org/protobuf v1.36.6
+	modernc.org/libc v1.17.1
 )
 
 require (

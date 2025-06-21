@@ -12,24 +12,24 @@ import (
 )
 
 type PyClient struct {
-	logger *zap.Logger
+	logger zap.Logger
 	client pythonpb.PythonUtilClient
 	conn   *grpc.ClientConn
 }
 
 // NewPyClient creates and returns a new Python gRPC client
-func NewPyClient(ctx context.Context, logger *zap.Logger) (*PyClient, error) {
+func NewPyClient(ctx context.Context, logger zap.Logger) (PyClient, error) {
 	conn, err := grpc.NewClient(
 		"passthrough:///localhost:50051",
 		grpc.WithTransportCredentials(insecure.NewCredentials()),
 	)
 	if err != nil {
 
-		return nil, fmt.Errorf("failed to dial Python gRPC server: %w", err)
+		return PyClient{}, fmt.Errorf("failed to dial Python gRPC server: %w", err)
 	}
 	logger.Info("Connected to GRPC Server")
 	client := pythonpb.NewPythonUtilClient(conn)
-	return &PyClient{
+	return PyClient{
 		logger: logger,
 		client: client,
 		conn:   conn,
@@ -59,4 +59,13 @@ func (p *PyClient) CallGenerateEmbeddings(ctx context.Context, content string) (
 		return nil, err
 	}
 	return resp, nil
+}
+
+func (p *PyClient) CallGenerateKeywords(ctx context.Context, content string) ([]string, error) {
+	resp, err := p.client.GenerateKeywords(ctx, &pythonpb.GenerateKeywordsRequest{Content: content})
+	if err != nil {
+		p.logger.Error("Keyword Generation failed", zap.Error(err))
+		return nil, err
+	}
+	return resp.Keywords, nil
 }

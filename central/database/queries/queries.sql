@@ -47,9 +47,9 @@ LIMIT $3;
 
 -- name: UpsertWordAndIncrementDFI :one
 INSERT INTO dictionary (word, dfi)
-VALUES ($1, 1)
+VALUES ($1, $2)
 ON CONFLICT (word)
-DO UPDATE SET dfi = dictionary.dfi + 1
+DO UPDATE SET dfi = dictionary.dfi + $2
 RETURNING word_id;
 
 
@@ -64,11 +64,11 @@ SELECT dfi FROM dictionary WHERE word_id = $1;
 
 -- name: InsertFreq :exec
 INSERT INTO invertedindex (word_id, lid, freq)
-VALUES ($1, $2, $3)
+VALUES ($1, $2, $3)  
 ON CONFLICT (word_id, lid)
 DO UPDATE SET freq = EXCLUDED.freq;
 
--- name: InsertOrGetWord :one
+-- name: InsertWord :one
 INSERT INTO dictionary (word, dfi)
 VALUES ($1, 0)
 ON CONFLICT (word) DO NOTHING

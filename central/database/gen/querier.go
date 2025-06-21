@@ -16,9 +16,9 @@ type Querier interface {
 	// fallback query if INSERT returns nothing:
 	GetWordID(ctx context.Context, word string) (int32, error)
 	InsertFreq(ctx context.Context, arg InsertFreqParams) error
-	InsertOrGetWord(ctx context.Context, word string) (int32, error)
+	InsertWord(ctx context.Context, word string) (int32, error)
 	UpsertVector(ctx context.Context, arg UpsertVectorParams) error
-	UpsertWordAndIncrementDFI(ctx context.Context, word string) (int32, error)
+	UpsertWordAndIncrementDFI(ctx context.Context, arg UpsertWordAndIncrementDFIParams) (int32, error)
 }
 
 var _ Querier = (*Queries)(nil)
