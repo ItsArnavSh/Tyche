@@ -26,31 +26,48 @@ func NewNewsStruct(ctx context.Context, logger zap.Logger, pyclient pyinterface.
 func (n *NewsStruct) PollSampleData(ctx context.Context, resChan chan<- entity.NewsChanEntry) {
 
 	headlines := []string{
-		// 🌀 Earthquake News
+		// 🌍 Earthquake in Japan (Same Event)
 		"Massive Earthquake Strikes Southern Japan, Thousands Displaced",
 		"Southern Japan Hit by Powerful Quake, Residents Forced to Evacuate",
 		"Quake Shakes Japan’s South, Triggers Widespread Evacuations",
 		"Thousands Evacuated After 7.8 Magnitude Earthquake Rocks Japan",
 
-		// 🧠 GPT-5 Launch
+		// 🌋 Earthquake in Chile (Similar Topic, Different Event)
+		"Strong Earthquake Hits Northern Chile, Minor Damage Reported",
+		"6.5 Magnitude Quake Jolts Chilean Coastline, Tsunami Alert Issued",
+
+		// 🤖 GPT-5 Launch (Same Event)
 		"OpenAI Releases GPT-5, Capable of Multi-Modal Real-Time Reasoning",
 		"GPT-5 Debuts with Support for Text, Images, and Video",
 		"OpenAI’s GPT-5 Promises Real-Time Multimodal Intelligence",
 
-		// 🪐 NASA Discovery
+		// 🤖 GPT-4 Turbo (Similar Topic, Different Event)
+		"OpenAI Rolls Out GPT-4 Turbo With Lower Latency",
+		"Developers Embrace GPT-4 Turbo for Real-Time Applications",
+
+		// 🪐 NASA Earth-like Planet (Same Event)
 		"NASA Finds Earth-Like Planet Orbiting in Habitable Zone",
 		"New Exoplanet Discovered by NASA May Be Capable of Supporting Life",
 		"NASA Detects Potentially Habitable Earth Twin Outside Solar System",
 
-		// 🚀 Indian Hypersonic Missile
+		// 🛰️ NASA Mars Rover Update (Similar Topic, Different Event)
+		"NASA's Perseverance Rover Discovers Organic Molecules on Mars",
+		"Mars Rover Sends Back Stunning Images of Ancient River Delta",
+
+		// 🚀 Indian Hypersonic Missile (Same Event)
 		"India Successfully Tests Hypersonic Missile Prototype",
 		"India Joins Hypersonic Missile Race With Successful Test Launch",
 
-		// 📢 Random Feed Ads or Noise
+		// 🚀 Chinese Hypersonic Test (Different Event)
+		"China Conducts Hypersonic Missile Test Amid Rising Tensions",
+		"Chinese Military Claims Breakthrough in Hypersonic Technology",
+
+		// 📢 Random Feed Ads or Lifestyle Content
 		"Get 20% Off on All Winter Jackets — Limited Time Offer!",
 		"Here’s What Your Coffee Says About Your Personality",
 		"Top 10 Anime You Should Watch Before the End of 2025",
 		"New Study Reveals How Blue Light Affects Your Sleep Cycle",
+		"5-Minute Morning Routines That Will Boost Your Productivity",
 	}
 	for _, news := range headlines {
 		resChan <- entity.NewsChanEntry{Title: news}

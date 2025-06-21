@@ -4,7 +4,6 @@ import (
 	"central/application/util/entity"
 	database "central/database/gen"
 	"context"
-	"fmt"
 	"math"
 	"sort"
 	"time"
@@ -71,7 +70,7 @@ func (n *NewsStruct) upsertNews(ctx context.Context, headline string) (bool, err
 	if err != nil {
 		return false, err
 	}
-	mergedRes := n.PerformIntersection(ctx, bmrankings, semanticrankings)
+	mergedRes := n.PerformIntersection(bmrankings, semanticrankings)
 	if len(mergedRes) > viper.GetInt("search.sim_thres") {
 		relevant = true
 	}
@@ -177,10 +176,10 @@ func (n *NewsStruct) SortBM25KeysByValueDesc(bm25 map[int32]float32) []int32 {
 
 	return sortedKeys
 }
-
-func (n *NewsStruct) PerformIntersection(ctx context.Context, a, b []int32) []int32 {
+func (n *NewsStruct) PerformIntersection(a, b []int32) []int32 {
 	m := make(map[int32]bool)
 	for _, v := range a {
+
 		m[v] = true
 	}
 
@@ -190,37 +189,5 @@ func (n *NewsStruct) PerformIntersection(ctx context.Context, a, b []int32) []in
 			result = append(result, v)
 		}
 	}
-
-	// Print results
-	fmt.Printf("🔹 BM25 Matches (%d):\n", len(a))
-	for _, id := range a {
-		headline, err := n.db.GetHeadline(ctx, id)
-		if err != nil {
-			fmt.Printf("  [%d] <error fetching headline>\n", id)
-		} else {
-			fmt.Printf("  [%d] %s\n", id, headline)
-		}
-	}
-
-	fmt.Printf("\n🔹 Semantic Matches (%d):\n", len(b))
-	for _, id := range b {
-		headline, err := n.db.GetHeadline(ctx, id)
-		if err != nil {
-			fmt.Printf("  [%d] <error fetching headline>\n", id)
-		} else {
-			fmt.Printf("  [%d] %s\n", id, headline)
-		}
-	}
-
-	fmt.Printf("\n✅ Intersection Matches (%d):\n", len(result))
-	for _, id := range result {
-		headline, err := n.db.GetHeadline(ctx, id)
-		if err != nil {
-			fmt.Printf("  [%d] <error fetching headline>\n", id)
-		} else {
-			fmt.Printf("  [%d] %s\n", id, headline)
-		}
-	}
-
 	return result
 }
