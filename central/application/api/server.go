@@ -8,12 +8,11 @@ import (
 	"context"
 	"database/sql"
 
-	"github.com/spf13/viper"
 	"go.uber.org/zap"
 )
 
 func StartServer(ctx context.Context, logger zap.Logger, db *sql.DB) {
-	rssFeedURLs := viper.GetStringSlice("rssFeeds")
+	//rssFeedURLs := viper.GetStringSlice("rssFeeds")
 
 	queries := database.New(db)
 	NewsUrls := make(chan entity.NewsChanEntry)
@@ -23,14 +22,23 @@ func StartServer(ctx context.Context, logger zap.Logger, db *sql.DB) {
 		logger.Error("Could not connect to python microservice", zap.Error(err))
 		return
 	}
-	newsHandler, err := newsparser.NewNewsStruct(ctx, logger, pycli, queries)
-	for _, rssFeedUrl := range rssFeedURLs {
-
-		go newsHandler.PollFeed(ctx, logger, rssFeedUrl, NewsUrls)
+	_, err = pycli.CallGenerateKeywords(ctx, "GRPC TEST 1 2 3")
+	if err != nil {
+		logger.Error("GRPC is not working", zap.Error(err))
+		return
 	}
+	newsHandler, err := newsparser.NewNewsStruct(ctx, logger, pycli, queries)
+	//for _, rssFeedUrl := range rssFeedURLs {
+	//
+	//go newsHandler.PollFeed(ctx, logger, rssFeedUrl, NewsUrls)
+	//}
+
+	go newsHandler.PurgeNews(ctx) //Deleteing obsolete news from the db
+
 	if err != nil {
 		logger.Error("Could Not Connect to Python GRPC", zap.Error(err))
 		return
 	}
+	go newsHandler.PollSampleData(ctx, NewsUrls)
 	newsHandler.NewsConsumer(ctx, NewsUrls)
 }

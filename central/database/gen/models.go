@@ -24,7 +24,7 @@ type Livefeed struct {
 	Lid       int32        `json:"lid"`
 	CreatedAt sql.NullTime `json:"created_at"`
 	Headline  string       `json:"headline"`
-	Url       string       `json:"url"`
+	ConSize   int32        `json:"con_size"`
 }
 
 type Vecdb struct {

@@ -74,10 +74,28 @@ VALUES ($1, 0)
 ON CONFLICT (word) DO NOTHING
 RETURNING word_id;
 
--- fallback query if INSERT returns nothing:
+-- fallback query if INSERT returns nothing:  
 -- name: GetWordID :one
 SELECT word_id FROM dictionary WHERE word = $1;
 --
 --id = db.InsertOrGetWord(word)
 --if id == nil:
 --    id = db.GetWordID(word)
+
+
+
+-- name: InsertLivefeed :exec
+INSERT INTO livefeed (lid, headline, con_size)
+VALUES ($1, $2, $3);
+
+-- name: GetTotalDocs :one
+SELECT COUNT(*) FROM livefeed;
+
+-- name: GetAverageDocLength :one
+SELECT AVG(con_size)::FLOAT FROM livefeed;
+
+-- name: GetDocSizeByLID :one
+SELECT con_size FROM livefeed WHERE lid = $1;
+
+-- name: GetHeadline :one
+SELECT headline FROM livefeed WHERE lid = $1;

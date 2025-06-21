@@ -4,11 +4,13 @@ import (
 	"central/application/util/entity"
 	database "central/database/gen"
 	"context"
+	"fmt"
 	"math"
 	"sort"
 	"time"
 
 	"github.com/google/uuid"
+	"github.com/pgvector/pgvector-go"
 	"github.com/spf13/viper"
 	"go.uber.org/zap"
 )
@@ -35,28 +37,30 @@ func (n *NewsStruct) PurgeNews(ctx context.Context) {
 		<-ticker.C
 	}
 }
-func Float32ToFloat64(input []float32) []float64 {
-	output := make([]float64, len(input))
-	for i, v := range input {
-		output[i] = float64(v)
-	}
-	return output
-}
 func (n *NewsStruct) upsertNews(ctx context.Context, headline string) (bool, error) {
 	relevant := false
 	lid := int32(uuid.New().ID())
+	err := n.db.InsertLivefeed(ctx, database.InsertLivefeedParams{Lid: lid, Headline: headline})
+	if err != nil {
+		n.logger.Error("Unable to save news on db", zap.Error(err))
+	}
 	//First Upsert to vectorDB
 
 	resp, err := n.pyclient.CallGenerateEmbeddings(ctx, headline)
+	if err != nil {
+		return false, err
+	}
 	embeddings := resp.Embeddings
-	semanticrankings, err := n.semanticRankings(ctx, Float32ToFloat64(embeddings))
+	semanticrankings, err := n.semanticRankings(ctx, embeddings)
 	if err != nil {
 		n.logger.Error("Could not fetch embeddings", zap.Error(err))
 		return false, err
 	}
-	n.db.UpsertVector(ctx, database.UpsertVectorParams{Lid: lid,
-		Embedding: embeddings})
-
+	err = n.db.UpsertVector(ctx, database.UpsertVectorParams{Lid: lid,
+		Embedding: pgvector.NewVector(embeddings)})
+	if err != nil {
+		n.logger.Error("Error Upserting Vector", zap.Error(err))
+	}
 	// Break into keywords
 	keywords, err := n.pyclient.CallGenerateKeywords(ctx, headline)
 	if err != nil {
@@ -64,8 +68,11 @@ func (n *NewsStruct) upsertNews(ctx context.Context, headline string) (bool, err
 		return false, err
 	}
 	bmrankings, err := n.bm25(ctx, keywords)
-	mergedRes := n.PerformIntersection(bmrankings, semanticrankings)
-	if len(mergedRes) > viper.GetInt("newstreshold") {
+	if err != nil {
+		return false, err
+	}
+	mergedRes := n.PerformIntersection(ctx, bmrankings, semanticrankings)
+	if len(mergedRes) > viper.GetInt("search.sim_thres") {
 		relevant = true
 	}
 	keyfreq := n.WordFrequencies(keywords)
@@ -92,18 +99,24 @@ func (n *NewsStruct) WordFrequencies(words []string) map[string]int32 {
 	}
 	return freqMap
 }
-func (n *NewsStruct) semanticRankings(ctx context.Context, embeddings []float64) ([]int32, error) {
-	relevance := viper.GetFloat64("semantic.relevance")
-
-	return n.db.GetRelevantChunks(ctx, database.GetRelevantChunksParams{Embedding: embeddings, Embedding_2: relevance, Limit: 5})
+func (n *NewsStruct) semanticRankings(ctx context.Context, embeddings []float32) ([]int32, error) {
+	relevance := float32(viper.GetFloat64("search.semantic.relevance"))
+	vector := pgvector.NewVector(embeddings)
+	return n.db.GetRelevantChunks(ctx, database.GetRelevantChunksParams{Embedding: vector, Embedding_2: relevance, Limit: 5})
 
 }
 func (n *NewsStruct) bm25(ctx context.Context, keywords []string) ([]int32, error) {
-	B := viper.GetFloat64("bm25.B")
-	K := viper.GetFloat64("bm25.K")
-	bmmap := make(map[int32]float64)
-	avgdl := 15.0   //Todo: Get values for DB for average doc size
-	totalRepo := 10 //Todo: Get values from the DB
+	B := float32(viper.GetFloat64("search.bm25.B"))
+	K := float32(viper.GetFloat64("search.bm25.K"))
+	bmmap := make(map[int32]float32)
+	avgdl, err := n.db.GetAverageDocLength(ctx)
+	if err != nil {
+		return nil, err
+	}
+	totalRepo, err := n.db.GetTotalDocs(ctx)
+	if err != nil {
+		return nil, err
+	}
 	for _, keyword := range keywords {
 		wordid, err := n.db.UpsertWordAndIncrementDFI(ctx, database.UpsertWordAndIncrementDFIParams{Word: keyword, Dfi: 0})
 		if err != nil {
@@ -121,11 +134,17 @@ func (n *NewsStruct) bm25(ctx context.Context, keywords []string) ([]int32, erro
 			return nil, err
 		}
 
-		idf := math.Log((float64(totalRepo)-float64(dfi)+0.5)/(float64(dfi)+float64(0.5)) + 1)
+		idf := math.Log(float64((float32(totalRepo)-float32(dfi)+0.5)/(float32(dfi)+float32(0.5)) + 1))
 		for _, freq := range freq_list {
-			docsize := 10 //Todo: Get these values also from db
+			docsize, err := n.db.GetDocSizeByLID(ctx, freq.Lid)
 
-			currbm := (float64(freq.Freq) * (K + 1)) / (float64(freq.Freq) + K*(1-B+B*float64(docsize)/avgdl)) * idf
+			if err != nil {
+				return nil, err
+			}
+
+			currbm := (float32(freq.Freq) * (K + 1)) /
+				(float32(freq.Freq) + K*(1-B+B*float32(docsize)/float32(avgdl))) *
+				float32(idf)
 			bmmap[freq.Lid] += currbm
 		}
 	}
@@ -133,10 +152,10 @@ func (n *NewsStruct) bm25(ctx context.Context, keywords []string) ([]int32, erro
 	return sortedKeys, nil
 }
 
-func (n *NewsStruct) SortBM25KeysByValueDesc(bm25 map[int32]float64) []int32 {
+func (n *NewsStruct) SortBM25KeysByValueDesc(bm25 map[int32]float32) []int32 {
 	type kv struct {
 		Key   int32
-		Value float64
+		Value float32
 	}
 
 	// Convert map to slice of kv pairs
@@ -158,7 +177,8 @@ func (n *NewsStruct) SortBM25KeysByValueDesc(bm25 map[int32]float64) []int32 {
 
 	return sortedKeys
 }
-func (n *NewsStruct) PerformIntersection(a, b []int32) []int32 {
+
+func (n *NewsStruct) PerformIntersection(ctx context.Context, a, b []int32) []int32 {
 	m := make(map[int32]bool)
 	for _, v := range a {
 		m[v] = true
@@ -170,5 +190,37 @@ func (n *NewsStruct) PerformIntersection(a, b []int32) []int32 {
 			result = append(result, v)
 		}
 	}
+
+	// Print results
+	fmt.Printf("🔹 BM25 Matches (%d):\n", len(a))
+	for _, id := range a {
+		headline, err := n.db.GetHeadline(ctx, id)
+		if err != nil {
+			fmt.Printf("  [%d] <error fetching headline>\n", id)
+		} else {
+			fmt.Printf("  [%d] %s\n", id, headline)
+		}
+	}
+
+	fmt.Printf("\n🔹 Semantic Matches (%d):\n", len(b))
+	for _, id := range b {
+		headline, err := n.db.GetHeadline(ctx, id)
+		if err != nil {
+			fmt.Printf("  [%d] <error fetching headline>\n", id)
+		} else {
+			fmt.Printf("  [%d] %s\n", id, headline)
+		}
+	}
+
+	fmt.Printf("\n✅ Intersection Matches (%d):\n", len(result))
+	for _, id := range result {
+		headline, err := n.db.GetHeadline(ctx, id)
+		if err != nil {
+			fmt.Printf("  [%d] <error fetching headline>\n", id)
+		} else {
+			fmt.Printf("  [%d] %s\n", id, headline)
+		}
+	}
+
 	return result
 }

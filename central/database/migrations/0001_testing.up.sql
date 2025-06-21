@@ -9,7 +9,7 @@ CREATE TABLE IF NOT EXISTS livefeed (
     lid INTEGER PRIMARY KEY,
     created_at TIMESTAMPTZ DEFAULT now(),
     headline TEXT NOT NULL,
-    url TEXT NOT NULL
+    con_size INTEGER NOT NULL
 );
 
 CREATE TABLE IF NOT EXISTS invertedindex (

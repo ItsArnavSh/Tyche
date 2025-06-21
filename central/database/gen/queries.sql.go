@@ -18,6 +18,17 @@ func (q *Queries) CleanupOldEntries(ctx context.Context) error {
 	return err
 }
 
+const getAverageDocLength = `-- name: GetAverageDocLength :one
+SELECT AVG(con_size)::FLOAT FROM livefeed
+`
+
+func (q *Queries) GetAverageDocLength(ctx context.Context) (float64, error) {
+	row := q.db.QueryRowContext(ctx, getAverageDocLength)
+	var column_1 float64
+	err := row.Scan(&column_1)
+	return column_1, err
+}
+
 const getDFI = `-- name: GetDFI :one
 SELECT dfi FROM dictionary WHERE word_id = $1
 `
@@ -27,6 +38,17 @@ func (q *Queries) GetDFI(ctx context.Context, wordID int32) (int32, error) {
 	var dfi int32
 	err := row.Scan(&dfi)
 	return dfi, err
+}
+
+const getDocSizeByLID = `-- name: GetDocSizeByLID :one
+SELECT con_size FROM livefeed WHERE lid = $1
+`
+
+func (q *Queries) GetDocSizeByLID(ctx context.Context, lid int32) (int32, error) {
+	row := q.db.QueryRowContext(ctx, getDocSizeByLID, lid)
+	var con_size int32
+	err := row.Scan(&con_size)
+	return con_size, err
 }
 
 const getFreqList = `-- name: GetFreqList :many
@@ -55,6 +77,17 @@ func (q *Queries) GetFreqList(ctx context.Context, wordID int32) ([]Invertedinde
 		return nil, err
 	}
 	return items, nil
+}
+
+const getHeadline = `-- name: GetHeadline :one
+SELECT headline FROM livefeed WHERE lid = $1
+`
+
+func (q *Queries) GetHeadline(ctx context.Context, lid int32) (string, error) {
+	row := q.db.QueryRowContext(ctx, getHeadline, lid)
+	var headline string
+	err := row.Scan(&headline)
+	return headline, err
 }
 
 const getRelevantChunks = `-- name: GetRelevantChunks :many
@@ -94,6 +127,17 @@ func (q *Queries) GetRelevantChunks(ctx context.Context, arg GetRelevantChunksPa
 	return items, nil
 }
 
+const getTotalDocs = `-- name: GetTotalDocs :one
+SELECT COUNT(*) FROM livefeed
+`
+
+func (q *Queries) GetTotalDocs(ctx context.Context) (int64, error) {
+	row := q.db.QueryRowContext(ctx, getTotalDocs)
+	var count int64
+	err := row.Scan(&count)
+	return count, err
+}
+
 const getWordID = `-- name: GetWordID :one
 SELECT word_id FROM dictionary WHERE word = $1
 `
@@ -121,6 +165,29 @@ type InsertFreqParams struct {
 
 func (q *Queries) InsertFreq(ctx context.Context, arg InsertFreqParams) error {
 	_, err := q.db.ExecContext(ctx, insertFreq, arg.WordID, arg.Lid, arg.Freq)
+	return err
+}
+
+const insertLivefeed = `-- name: InsertLivefeed :exec
+
+
+
+INSERT INTO livefeed (lid, headline, con_size)
+VALUES ($1, $2, $3)
+`
+
+type InsertLivefeedParams struct {
+	Lid      int32  `json:"lid"`
+	Headline string `json:"headline"`
+	ConSize  int32  `json:"con_size"`
+}
+
+// id = db.InsertOrGetWord(word)
+// if id == nil:
+//
+//	id = db.GetWordID(word)
+func (q *Queries) InsertLivefeed(ctx context.Context, arg InsertLivefeedParams) error {
+	_, err := q.db.ExecContext(ctx, insertLivefeed, arg.Lid, arg.Headline, arg.ConSize)
 	return err
 }
 
