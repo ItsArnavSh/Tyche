@@ -12,6 +12,7 @@ pub struct Server {
 impl Server {
     pub fn new(url: &str) -> Self {
         let redisconn = RedisConn::new(url).unwrap();
+        println!("Connection with Reddis Established");
         Server {
             rediscon: redisconn,
             scheduler: Arc::new(Mutex::new(UBee::new())),
@@ -30,8 +31,15 @@ impl Server {
                             let mut bee = ubee.lock().unwrap();
                             bee.give_jobs()
                         };
-                        println!("Worker {} Got {} tasks", i, tasks.len());
                         //To-do: Process the task one by one here
+                        for task in &tasks {
+                            println!(
+                                "Worker {} is doing {} at priority {}",
+                                i, task.ticker, task.priority
+                            );
+                            std::thread::sleep(std::time::Duration::from_millis(1000)); //Doing
+                            //task
+                        }
                         if tasks.is_empty() {
                             std::thread::sleep(std::time::Duration::from_millis(1000));
                         }

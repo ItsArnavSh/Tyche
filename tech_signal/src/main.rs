@@ -28,6 +28,7 @@ impl RustService for RustyService {
         request: Request<SendStockDataRequest>,
     ) -> Result<Response<SendStockDataResponse>, Status> {
         let stocks = request.into_inner().stocks;
+        println!("Received Update");
         self.server.update_data(stocks);
         let response = SendStockDataResponse { status: true };
         Ok(Response::new(response))
@@ -37,9 +38,10 @@ impl RustService for RustyService {
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let addr = "[::1]:50052".parse()?;
-    let service = RustyService::default();
+    let service = RustyService::new();
     let shared_service = Arc::clone(&service.server);
     tokio::spawn(async move {
+        println!("Starting Calc Server");
         shared_service.start_server().await;
     });
     println!("Starting server at 50052");

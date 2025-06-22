@@ -3,7 +3,6 @@ use std::cmp::Ordering;
 use std::collections::{BinaryHeap, HashMap};
 use std::sync::Mutex;
 #[derive(Debug, Default, Clone)]
-
 pub struct Block {
     pub ticker: String,
     pub value: f32,
@@ -37,7 +36,8 @@ pub struct UBee {
 }
 impl UBee {
     pub fn new() -> Self {
-        let thread_no = rayon::current_num_threads();
+        let thread_no = num_cpus::get();
+        println!("Just received count as {}", thread_no);
         UBee {
             heap: BinaryHeap::new(),
             core_count: thread_no,
@@ -49,8 +49,8 @@ impl UBee {
         }
     }
     pub fn give_jobs(&mut self) -> Vec<Block> {
+        println!("Heap size before giving away: {}", self.heap.len());
         let _guard = self.lock.lock().unwrap();
-        println!("Giving {} jobs to worker", self.allot_no);
         if self.heap.is_empty() {
             return vec![];
         }
@@ -62,23 +62,31 @@ impl UBee {
                 None => break,
             }
         }
+        println!("Core Count: {}", self.core_count);
         self.job_counter = (self.job_counter + 1) % self.core_count;
         self.allot_no = self.primes[self.job_counter];
         tasks
     }
     pub fn update_heap(&mut self, newvals: Vec<StockValue>) {
+        println!("Heap size before clearing: {}", self.heap.len());
         let _guard = self.lock.lock().unwrap();
         //First we check for all the remaining values in heap
+        println!("Clearing Stuff");
         loop {
             let block = self.heap.pop();
+
             match block {
                 Some(stock_value) => {
+                    println!("{} was left", stock_value.ticker);
                     self.priority_map
                         .entry(stock_value.ticker.clone())
                         .and_modify(|p| *p += 1)
                         .or_insert(101); //Updated priorities
                 }
-                None => break,
+                None => {
+                    println!("No blocks remain unseen");
+                    break;
+                }
             }
         }
         for val in newvals {
