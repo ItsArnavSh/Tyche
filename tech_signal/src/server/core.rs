@@ -22,7 +22,7 @@ impl Server {
         let no_threads = rayon::current_num_threads();
         println!("Starting server with {} threads", no_threads);
         rayon::scope(|s| {
-            for _ in 0..no_threads {
+            for i in 0..no_threads {
                 let ubee = Arc::clone(&self.scheduler);
                 s.spawn(move |_| {
                     loop {
@@ -30,15 +30,19 @@ impl Server {
                             let mut bee = ubee.lock().unwrap();
                             bee.give_jobs()
                         };
-                        println!("Got {} tasks", tasks.len());
+                        println!("Worker {} Got {} tasks", i, tasks.len());
                         //To-do: Process the task one by one here
                         if tasks.is_empty() {
-                            std::thread::sleep(std::time::Duration::from_millis(100));
+                            std::thread::sleep(std::time::Duration::from_millis(1000));
                         }
                     }
                 });
             }
         });
     }
-    pub fn update_data(&self, stocks: Vec<StockValue>) {}
+    pub fn update_data(&self, stocks: Vec<StockValue>) {
+        let ubee = Arc::clone(&self.scheduler);
+        let mut bee = ubee.lock().unwrap();
+        bee.update_heap(stocks);
+    }
 }

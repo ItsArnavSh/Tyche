@@ -50,7 +50,7 @@ impl UBee {
     }
     pub fn give_jobs(&mut self) -> Vec<Block> {
         let _guard = self.lock.lock().unwrap();
-
+        println!("Giving {} jobs to worker", self.allot_no);
         if self.heap.is_empty() {
             return vec![];
         }
@@ -63,6 +63,7 @@ impl UBee {
             }
         }
         self.job_counter = (self.job_counter + 1) % self.core_count;
+        self.allot_no = self.primes[self.job_counter];
         tasks
     }
     pub fn update_heap(&mut self, newvals: Vec<StockValue>) {
