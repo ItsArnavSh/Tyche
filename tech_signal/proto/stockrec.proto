@@ -1,0 +1,22 @@
+syntax = "proto3";
+
+package stockrec;
+
+service RustService {
+  rpc SendStockData(SendStockDataRequest) returns (SendStockDataResponse);
+}
+
+message SendStockDataRequest {
+  repeated StockValue stocks = 1;
+}
+
+message StockValue {
+  float open = 1;
+  float close = 2;
+  float high = 3;
+  float low = 4;
+  string name = 5;
+}
+message SendStockDataResponse {
+  bool status = 1;
+}
