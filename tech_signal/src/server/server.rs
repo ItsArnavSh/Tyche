@@ -22,12 +22,19 @@ impl Server {
             for _ in 0..no_threads {
                 let ubee = Arc::clone(&self.scheduler);
                 s.spawn(move |_| {
-                    let mut bee = ubee.lock().unwrap();
-                    let tasks = bee.give_jobs();
-                    println!("Got {} tasks", tasks.len());
+                    loop {
+                        let tasks = {
+                            let mut bee = ubee.lock().unwrap();
+                            bee.give_jobs()
+                        };
+                        println!("Got {} tasks", tasks.len());
+                        //To-do: Process the task one by one here
+                        if tasks.is_empty() {
+                            std::thread::sleep(std::time::Duration::from_millis(100));
+                        }
+                    }
                 });
             }
         });
     }
 }
-
