@@ -1,8 +1,9 @@
 use crate::{proto::StockValue, services::scheduler::ubee::util::first_n_primes};
 use std::cmp::Ordering;
 use std::collections::{BinaryHeap, HashMap};
-use std::hash::Hash;
+use std::sync::Mutex;
 #[derive(Debug, Default, Clone)]
+
 pub struct Block {
     pub ticker: String,
     pub value: f32,
@@ -31,7 +32,8 @@ pub struct UBee {
     pub job_counter: usize,
     pub allot_no: usize,
     pub primes: Vec<usize>,
-    pub priority: HashMap<String, i32>,
+    pub priority_map: HashMap<String, i32>,
+    pub lock: Mutex<()>,
 }
 impl UBee {
     pub fn new() -> Self {
@@ -42,32 +44,50 @@ impl UBee {
             job_counter: 0,
             allot_no: 2,
             primes: first_n_primes(thread_no),
-            priority: HashMap::new(),
+            priority_map: HashMap::new(),
+            lock: Mutex::new(()),
         }
     }
     pub fn give_jobs(&mut self) -> Vec<Block> {
+        let _guard = self.lock.lock().unwrap();
+
+        if self.heap.is_empty() {
+            return vec![];
+        }
         let mut tasks: Vec<Block> = vec![];
         for _ in 0..self.allot_no {
             let top_element = self.heap.pop();
             match top_element {
                 Some(data_val) => tasks.push(data_val),
-                None => continue,
+                None => break,
             }
         }
-        self.job_counter_pp();
+        self.job_counter = (self.job_counter + 1) % self.core_count;
         tasks
     }
     pub fn update_heap(&mut self, newvals: Vec<StockValue>) {
-        //Update the priorities for the remaining Stock
-        //
-    }
-    fn job_counter_pp(&mut self) {
-        if self.job_counter == self.core_count {
-            self.job_counter += 1;
-        } else {
-            self.job_counter = 0;
+        let _guard = self.lock.lock().unwrap();
+        //First we check for all the remaining values in heap
+        loop {
+            let block = self.heap.pop();
+            match block {
+                Some(stock_value) => {
+                    self.priority_map
+                        .entry(stock_value.ticker.clone())
+                        .and_modify(|p| *p -= 1)
+                        .or_insert(101); //Updated priorities
+                }
+                None => break,
+            }
         }
-        self.allot_no = self.primes[self.job_counter]
+        for val in newvals {
+            let prio = *self.priority_map.entry(val.name.clone()).or_insert(100);
+            self.heap.push(Block {
+                ticker: val.name,
+                value: val.close,
+                priority: prio,
+            });
+        }
     }
 }
 
