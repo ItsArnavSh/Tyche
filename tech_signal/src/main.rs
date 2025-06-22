@@ -1,13 +1,13 @@
 use tonic::{Request, Response, Status, transport::Server};
 
+pub mod services;
 mod proto {
     tonic::include_proto!("stockrec");
 }
 
 use proto::rust_service_server::{RustService, RustServiceServer};
 use proto::{SendStockDataRequest, SendStockDataResponse};
-
-#[derive(Default)]
+#[derive(Default, Debug)]
 pub struct RustyService;
 
 #[tonic::async_trait]
