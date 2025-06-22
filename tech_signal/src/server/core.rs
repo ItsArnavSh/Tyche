@@ -1,6 +1,9 @@
-use crate::services::{redis::redis::RedisConn, scheduler::ubee::UBee};
+use crate::{
+    proto::StockValue,
+    services::{redis::redis::RedisConn, scheduler::ubee::UBee},
+};
 use std::sync::{Arc, Mutex};
-
+#[derive(Debug, Default)]
 pub struct Server {
     pub rediscon: RedisConn,
     pub scheduler: Arc<Mutex<UBee>>,
@@ -37,4 +40,6 @@ impl Server {
             }
         });
     }
+    pub fn update_data(&self, stocks: Vec<StockValue>) {}
 }
+

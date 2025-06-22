@@ -25,7 +25,7 @@ impl PartialOrd for Block {
         Some(self.cmp(other))
     }
 }
-
+#[derive(Debug, Default)]
 pub struct UBee {
     pub heap: BinaryHeap<Block>,
     pub core_count: usize,

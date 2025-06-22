@@ -9,8 +9,16 @@ mod proto {
 use proto::rust_service_server::{RustService, RustServiceServer};
 use proto::{SendStockDataRequest, SendStockDataResponse};
 #[derive(Default, Debug)]
-pub struct RustyService;
-
+pub struct RustyService {
+    server: server::core::Server,
+}
+impl RustyService {
+    pub fn new() -> Self {
+        Self {
+            server: server::core::Server::new("link"),
+        }
+    }
+}
 #[tonic::async_trait]
 impl RustService for RustyService {
     async fn send_stock_data(
@@ -18,14 +26,7 @@ impl RustService for RustyService {
         request: Request<SendStockDataRequest>,
     ) -> Result<Response<SendStockDataResponse>, Status> {
         let stocks = request.into_inner().stocks;
-
-        for stock in stocks {
-            println!(
-                "Got stock {}: open={}, close={}, high={}, low={}",
-                stock.name, stock.open, stock.close, stock.high, stock.low
-            );
-        }
-
+        self.server.update_data(stocks);
         let response = SendStockDataResponse { status: true };
         Ok(Response::new(response))
     }
