@@ -1,5 +1,6 @@
 use tonic::{Request, Response, Status, transport::Server};
 
+pub mod server;
 pub mod services;
 mod proto {
     tonic::include_proto!("stockrec");

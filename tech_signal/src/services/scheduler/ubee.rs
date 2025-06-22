@@ -74,7 +74,7 @@ impl UBee {
                 Some(stock_value) => {
                     self.priority_map
                         .entry(stock_value.ticker.clone())
-                        .and_modify(|p| *p -= 1)
+                        .and_modify(|p| *p += 1)
                         .or_insert(101); //Updated priorities
                 }
                 None => break,
