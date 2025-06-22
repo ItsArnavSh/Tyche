@@ -18,9 +18,9 @@ impl Server {
         }
     }
 
-    pub fn start_server(&self) {
+    pub async fn start_server(&self) {
         let no_threads = rayon::current_num_threads();
-
+        println!("Starting server with {} threads", no_threads);
         rayon::scope(|s| {
             for _ in 0..no_threads {
                 let ubee = Arc::clone(&self.scheduler);
@@ -42,4 +42,3 @@ impl Server {
     }
     pub fn update_data(&self, stocks: Vec<StockValue>) {}
 }
-
