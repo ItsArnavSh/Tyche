@@ -15,4 +15,5 @@ dependencies = [
     "rss-parser>=2.1.0",
     "sentence-transformers>=4.1.0",
     "text-prettifier>=2.0.1",
+    "yfinance>=0.2.63",
 ]

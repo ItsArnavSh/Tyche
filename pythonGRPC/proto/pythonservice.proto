@@ -6,6 +6,7 @@ service PythonUtil {
   rpc ParseNewsArticle(ParseNewsArticleRequest) returns (ParseNewsArticleResponse);
   rpc GenerateEmbeddings(GenerateEmbeddingsRequest) returns (GenerateEmbeddingsResponse);
   rpc GenerateKeywords(GenerateKeywordsRequest) returns (GenerateKeywordsResponse);
+  rpc StreamHistorical(StreamHistoricalRequest) returns (stream StreamHistoricalResponse);
 }
 message ParseNewsArticleRequest {
   string url = 1;
@@ -28,4 +29,22 @@ message GenerateKeywordsRequest {
 
 message GenerateKeywordsResponse {
   repeated string keywords = 1;
+}
+
+message StreamHistoricalRequest{
+    string startdate = 1;
+    string enddate = 2;
+    repeated string tickers = 3;
+}
+message StreamHistoricalResponse{
+    string timestamp = 1;
+    repeated StockData stocks= 2;
+}
+message StockData{
+    string ticker = 1;
+    float open = 2;
+    float close = 3;
+    float low = 4;
+    float high = 5;
+    float volume = 6;
 }
