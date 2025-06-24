@@ -18,8 +18,14 @@ search:
   bm25:
     B: 0.75
     K: 1.2
-
-    
+mode: backtesting
+backtesting:
+  startdate: 2025-06-11
+  enddate: 2025-06-12
+  tickers:
+    - BSE.NS
+    - BEL.NS
+    - ITC.NS
 rssFeeds:
   - https://economictimes.indiatimes.com/markets/rssfeeds/1977021501.cms
   - https://timesofindia.indiatimes.com/rssfeeds/296589292.cms

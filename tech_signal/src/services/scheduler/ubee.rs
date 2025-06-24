@@ -49,7 +49,6 @@ impl UBee {
         }
     }
     pub fn give_jobs(&mut self) -> Vec<Block> {
-        println!("Heap size before giving away: {}", self.heap.len());
         let _guard = self.lock.lock().unwrap();
         if self.heap.is_empty() {
             return vec![];
@@ -68,7 +67,6 @@ impl UBee {
         tasks
     }
     pub fn update_heap(&mut self, newvals: Vec<StockValue>) {
-        println!("Heap size before clearing: {}", self.heap.len());
         let _guard = self.lock.lock().unwrap();
         //First we check for all the remaining values in heap
         println!("Clearing Stuff");

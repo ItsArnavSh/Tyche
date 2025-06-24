@@ -27,11 +27,14 @@ class PythonUtilServicer(pb2_grpc.PythonUtilServicer):
         return pb2.GenerateKeywordsResponse(keywords=keywords)
 
     async def StreamHistorical(self, request:pb2.StreamHistoricalRequest, context):
+        print("Received Request")
         days:list[str] = get_days_between(request.startdate,request.enddate)
         # The flow would be to get one days data, trim out the zeros and feed it to the stream, then repeat for all days
         for day in days:
+            print("Loading data for stock day: ",day)
             data = GetDayDataStocks(day,list(request.tickers))
             for row in data:
+                print("Sending Data for: ",row.timestamp)
                 yield row
                 time.sleep(0.5)
 async def serve():

@@ -44,11 +44,11 @@ func NewServer(ctx context.Context,logger zap.Logger,db *sql.DB)(Server,error){
 
 func (s *Server) StartServer(ctx context.Context) {
 	var wg sync.WaitGroup
-	wg.Add(2)
-	go func() {
-		defer wg.Done()
-		s.NewsServer(ctx)
-	}()
+	wg.Add(1)
+	// go func() {
+	// 	defer wg.Done()
+	// 	s.NewsServer(ctx)
+	// }()
 	go func() {
 		defer wg.Done()
 		s.StockStreamServer(ctx)
@@ -58,8 +58,9 @@ func (s *Server) StartServer(ctx context.Context) {
 func (s *Server)StockStreamServer(ctx context.Context){
 	
 	StockStream := make(chan entity.StockStream)
-	if viper.GetString("Mode")=="Backtesting"{	
-		config := entity.StockStreamConfig{StartDate: viper.GetString("Backtesting.startdate"),EndDate: viper.GetString("Backtesting.enddate"),Tickers: viper.GetStringSlice("Backtesting.tickers")}
+	if viper.GetString("mode")=="backtesting"{
+		s.logger.Info("Running Backtesting mode")
+		config := entity.StockStreamConfig{StartDate: viper.GetString("backtesting.startdate"),EndDate: viper.GetString("backtesting.enddate"),Tickers: viper.GetStringSlice("backtesting.tickers")}
 		go s.pycli.StreamFromHistoricalData(ctx, config, StockStream)
 		s.rscli.SendToRust(ctx, StockStream)
 	}

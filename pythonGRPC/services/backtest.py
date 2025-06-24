@@ -57,13 +57,15 @@ def get_days_between(start_date: str, end_date: str):
     Returns a list of dates from start_date to end_date (excluding end_date),
     all in 'yyyy-mm-dd' format.
     """
+    start_date = start_date.split()[0]
+    end_date = end_date.split()[0]
+    print(f"Request from {start_date} to {end_date}")
     start = datetime.strptime(start_date, "%Y-%m-%d")
     end = datetime.strptime(end_date, "%Y-%m-%d")
-
     days = []
     current = start
     while current < end:
         days.append(current.strftime("%Y-%m-%d"))
         current += timedelta(days=1)
-
+    print(days)
     return days

@@ -26,5 +26,6 @@ func main() {
 	}
 	db, _ := databasehandler.DbConnection()
 	logger.Info("Connected to database")
-	server.StartServer(ctx, *logger, db)
+	serv,_:=server.NewServer(ctx, *logger, db)
+	serv.StartServer(ctx)	
 }
