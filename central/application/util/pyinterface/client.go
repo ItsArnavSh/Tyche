@@ -3,7 +3,9 @@ package pyinterface
 import (
 	"context"
 	"fmt"
+	"io"
 
+	"central/application/util/entity"
 	pythonpb "central/proto"
 
 	"go.uber.org/zap"
@@ -68,4 +70,43 @@ func (p *PyClient) CallGenerateKeywords(ctx context.Context, content string) ([]
 		return nil, err
 	}
 	return resp.Keywords, nil
+}
+
+func (p *PyClient) StreamFromHistoricalData(ctx context.Context,config entity.StockStreamConfig,StockChan chan<- entity.StockStream )error{
+	stream,err := p.client.StreamHistorical(ctx, &pythonpb.StreamHistoricalRequest{Startdate:config.StartDate,Enddate: config.EndDate,Tickers: config.Tickers})
+	if err!=nil{
+		p.logger.Error("Could not stream data", zap.Error(err))	
+	return err
+	}
+	for {
+		msg, err := stream.Recv()
+		if err == io.EOF {
+			break
+		}
+		if err != nil {
+			return fmt.Errorf("stream error: %w", err)
+		}
+
+		stocks := msg.GetStocks()
+		// Preallocate slice for better perf
+		stockSlice := make([]entity.StockData, 0, len(stocks))
+
+		for _, stock := range stocks {
+			stockSlice = append(stockSlice, entity.StockData{
+				Ticker: stock.Ticker,
+				Open:   stock.Open,
+				Close:  stock.Close,
+				Low:    stock.Low,
+				High:   stock.High,
+				Volume: stock.Volume,
+			})
+		}
+
+		// Send to channel
+		StockChan <- entity.StockStream{
+			Timestamp: msg.Timestamp,
+			StockValues:    stockSlice,
+		}
+}
+	return nil
 }
