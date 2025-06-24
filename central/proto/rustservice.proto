@@ -1,17 +1,14 @@
+
 syntax = "proto3";
-package RustService;
 
-import "google/protobuf/empty.proto"; // Assuming you're returning google.protobuf.Empty
-
-option go_package = "central/proto/pb";
-
+package stockrec;
+option go_package =  "central/proto/pb";
 service RustService {
   rpc SendStockData(SendStockDataRequest) returns (SendStockDataResponse);
 }
 
 message SendStockDataRequest {
-  string timestamp = 1;
-  repeated StockValue stocks = 2;
+  repeated StockValue stocks = 1;
 }
 
 message StockValue {
@@ -19,8 +16,15 @@ message StockValue {
   float close = 2;
   float high = 3;
   float low = 4;
-  string value = 5;
+  string name = 5;
 }
 message SendStockDataResponse {
   bool status = 1;
+}
+
+///////////////////////////////////////
+message Signal {
+  string name = 1;
+  string action = 2;
+  string strategy = 3;
 }

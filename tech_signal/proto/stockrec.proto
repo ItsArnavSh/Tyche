@@ -1,6 +1,7 @@
 syntax = "proto3";
 
 package stockrec;
+option go_package =  "central/proto/pb";
 service RustService {
   rpc SendStockData(SendStockDataRequest) returns (SendStockDataResponse);
 }

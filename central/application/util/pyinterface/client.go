@@ -81,6 +81,7 @@ func (p *PyClient) StreamFromHistoricalData(ctx context.Context,config entity.St
 	for {
 		msg, err := stream.Recv()
 		if err == io.EOF {
+			close(StockChan)
 			break
 		}
 		if err != nil {
