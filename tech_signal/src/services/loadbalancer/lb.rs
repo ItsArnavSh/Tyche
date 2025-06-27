@@ -6,11 +6,13 @@ use std::{
 
 use tokio::{spawn, sync::Mutex, time::sleep};
 
-use crate::services::loadbalancer::strategies::strategy::Strategy;
+use crate::services::loadbalancer::strategies::strategy::{Odin, Strategy};
 
 pub struct LoadBalancer {
     pub active_tasks: HashMap<String, Vec<u32>>,
     pub time_queue: VecDeque<TimedTask>,
+    strategies: Vec<Strategy>,
+    odin: Odin,
 }
 
 impl LoadBalancer {
@@ -18,16 +20,25 @@ impl LoadBalancer {
         Arc::new(Mutex::new(Self {
             active_tasks: HashMap::new(),
             time_queue: VecDeque::new(),
+            odin: Odin::new(),
+            strategies: vec![], //Todo: Either hardcode here or fetch from config
         }))
     }
-
+    pub fn load_all(&mut self, tickers: Vec<String>) {
+        let straategies = self.strategies.clone();
+        for ticker in &tickers {
+            for strat in &self.strategies {
+                self.add_to_queue(ticker, strat);
+            }
+        }
+    }
     pub fn start_process(&self, lb: Arc<Mutex<Self>>) {
         let lb = lb.clone();
         spawn(async move {
             LoadBalancer::queue_to_dict(lb).await;
         });
     }
-    pub fn add_to_queue(&mut self, ticker: String, strat: Strategy) {
+    pub fn add_to_queue(&mut self, ticker: &String, strat: &Strategy) {
         let time = {
             if strat.alert {
                 strat.alert_candle_size
@@ -38,7 +49,7 @@ impl LoadBalancer {
         let new_time = add_time(time);
         self.time_queue.push_back(TimedTask {
             run_at: new_time,
-            ticker: ticker,
+            ticker: ticker.clone(),
             funcid: strat.functionid,
         });
     }

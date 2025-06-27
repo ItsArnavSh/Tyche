@@ -1,6 +1,6 @@
 use crate::{
     proto::StockValue,
-    services::{redis::redis::RedisConn, scheduler::ubee::UBee},
+    services::{internal::redis::redis::RedisConn, scheduler::ubee::UBee},
 };
 use std::sync::{Arc, Mutex};
 #[derive(Debug, Default)]

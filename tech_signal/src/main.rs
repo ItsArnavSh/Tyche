@@ -2,6 +2,7 @@ use std::sync::Arc;
 
 use tonic::{Request, Response, Status, transport::Server};
 
+pub mod entity;
 pub mod server;
 pub mod services;
 mod proto {
