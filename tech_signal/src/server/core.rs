@@ -1,6 +1,10 @@
 use crate::{
     proto::StockValue,
-    services::{internal::redis::redis::RedisConn, scheduler::ubee::UBee},
+    services::{
+        internal::{redis::redis::RedisConn, repository::Repository},
+        loadbalancer::lb::LoadBalancer,
+        scheduler::ubee::UBee,
+    },
 };
 use std::sync::{Arc, Mutex};
 #[derive(Debug, Default)]
@@ -20,6 +24,12 @@ impl Server {
     }
 
     pub async fn start_server(&self) {
+        let repo = Repository::new("");
+        let lb = LoadBalancer::new();
+        let mut lb_guard = lb.lock().await;
+        let tickers = vec![];
+        lb_guard.load_all(tickers);
+
         let no_threads = rayon::current_num_threads();
         println!("Starting server with {} threads", no_threads);
         rayon::scope(|s| {
@@ -37,11 +47,9 @@ impl Server {
                                 "Worker {} is doing {} at priority {}",
                                 i, task.ticker, task.priority
                             );
-                            std::thread::sleep(std::time::Duration::from_millis(1000)); //Doing
-                            //task
                         }
                         if tasks.is_empty() {
-                            std::thread::sleep(std::time::Duration::from_millis(1));
+                            std::thread::sleep(std::time::Duration::from_millis(1000));
                         }
                     }
                 });

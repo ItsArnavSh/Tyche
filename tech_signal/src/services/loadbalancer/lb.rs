@@ -6,7 +6,10 @@ use std::{
 
 use tokio::{spawn, sync::Mutex, time::sleep};
 
-use crate::services::loadbalancer::strategies::strategy::{Odin, Strategy};
+use crate::services::{
+    internal::{cache::cache::Cache, repository::Repository},
+    loadbalancer::strategies::strategy::{Odin, Strategy},
+};
 
 pub struct LoadBalancer {
     pub active_tasks: HashMap<String, Vec<u32>>,
@@ -24,11 +27,12 @@ impl LoadBalancer {
             strategies: vec![], //Todo: Either hardcode here or fetch from config
         }))
     }
+    //We will call this at the start of the function
     pub fn load_all(&mut self, tickers: Vec<String>) {
-        let straategies = self.strategies.clone();
+        let strategies = &self.strategies.clone();
         for ticker in &tickers {
-            for strat in &self.strategies {
-                self.add_to_queue(ticker, strat);
+            for strat in strategies {
+                self.add_to_queue(ticker, &strat);
             }
         }
     }
@@ -37,6 +41,16 @@ impl LoadBalancer {
         spawn(async move {
             LoadBalancer::queue_to_dict(lb).await;
         });
+    }
+    pub fn give_funcs(&mut self, ticker: &String) -> Vec<fn(Repository, String)> {
+        let strat_list = self.active_tasks.remove(ticker);
+        match strat_list {
+            Some(list) => list
+                .iter()
+                .map(|id| self.odin.get_by_id(*id as usize))
+                .collect(),
+            _ => vec![],
+        }
     }
     pub fn add_to_queue(&mut self, ticker: &String, strat: &Strategy) {
         let time = {
@@ -53,7 +67,7 @@ impl LoadBalancer {
             funcid: strat.functionid,
         });
     }
-    async fn queue_to_dict(lb: Arc<Mutex<Self>>) {
+    pub async fn queue_to_dict(lb: Arc<Mutex<Self>>) {
         loop {
             let task_opt = {
                 let mut this = lb.lock().await;
