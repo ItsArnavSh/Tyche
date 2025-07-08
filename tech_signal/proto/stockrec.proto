@@ -3,11 +3,43 @@ syntax = "proto3";
 package stockrec;
 option go_package =  "central/proto/pb";
 service RustService {
-  rpc SendStockData(SendStockDataRequest) returns (SendStockDataResponse);
+  rpc SendRollData(SendRollDataRequest) returns (SendRollDataResponse);
+  rpc SendBootSignal(SendBootSignalRequest) returns (SendBootSignalResponse);
 }
 
-message SendStockDataRequest {
-  repeated StockValue stocks = 1;
+message SendBootSignalRequest{
+    repeated TickerHistory hist = 1;
+}
+message SendBootSignalResponse{
+    bool status = 1;
+}
+message SendRollDataRequest{
+    repeated StockUpdate stock = 1;
+}
+
+message SendRollDataResponse{
+    repeated StockSeries missing = 1;
+}
+
+message StockSeries{
+    string name  = 1;
+    CandleSize size = 2;
+}
+message TickerHistory{
+    string name = 1;
+    repeated Series series = 2;
+}
+enum CandleSize{
+    SEC5 = 0;
+    SEC30 = 1;
+    MIN1 = 3;
+    MIN15 = 4;
+    HOUR1 = 5;
+    DAY1 = 6;
+}
+message Series{
+    CandleSize size = 1;
+    repeated StockValue val = 2;
 }
 
 message StockValue {
@@ -15,15 +47,12 @@ message StockValue {
   float close = 2;
   float high = 3;
   float low = 4;
-  string name = 5;
 }
-message SendStockDataResponse {
-  bool status = 1;
+message StockUpdate{
+    string name = 1;
+    repeated LatestStockVals vals = 2;
 }
-
-///////////////////////////////////////
-message Signal {
-  string name = 1;
-  string action = 2;
-  string strategy = 3;
+message LatestStockVals{
+    CandleSize size = 1;
+    StockValue val = 2;
 }

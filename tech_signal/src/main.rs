@@ -10,7 +10,9 @@ mod proto {
 }
 
 use proto::rust_service_server::{RustService, RustServiceServer};
-use proto::{SendStockDataRequest, SendStockDataResponse};
+use proto::{
+    SendBootSignalRequest, SendBootSignalResponse, SendRollDataRequest, SendRollDataResponse,
+};
 #[derive(Default, Debug)]
 pub struct RustyService {
     server: Arc<server::core::Server>,
@@ -24,15 +26,20 @@ impl RustyService {
 }
 #[tonic::async_trait]
 impl RustService for RustyService {
-    async fn send_stock_data(
+    async fn send_boot_signal(
         &self,
-        request: Request<SendStockDataRequest>,
-    ) -> Result<Response<SendStockDataResponse>, Status> {
-        let stocks = request.into_inner().stocks;
-        println!("Received Update");
-        self.server.update_data(stocks);
-        let response = SendStockDataResponse { status: true };
+        request: Request<SendBootSignalRequest>,
+    ) -> Result<Response<SendBootSignalResponse>, Status> {
+        let data = request.into_inner();
+        self.server.boot_loader(data);
+        let response = SendBootSignalResponse { status: true };
         Ok(Response::new(response))
+    }
+    async fn send_roll_data(
+        &self,
+        request: Request<SendRollDataRequest>,
+    ) -> Result<Response<SendRollDataResponse>, Status> {
+        request.into_inner().stock
     }
 }
 

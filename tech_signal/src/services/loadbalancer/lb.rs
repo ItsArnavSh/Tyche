@@ -10,7 +10,6 @@ use crate::services::{
     internal::{cache::cache::Cache, repository::Repository},
     loadbalancer::strategies::strategy::{Odin, Strategy},
 };
-
 pub struct LoadBalancer {
     pub active_tasks: HashMap<String, Vec<u32>>,
     pub time_queue: VecDeque<TimedTask>,
@@ -19,13 +18,13 @@ pub struct LoadBalancer {
 }
 
 impl LoadBalancer {
-    pub fn new() -> Arc<Mutex<Self>> {
-        Arc::new(Mutex::new(Self {
+    pub fn new() -> Self {
+        Self {
             active_tasks: HashMap::new(),
             time_queue: VecDeque::new(),
             odin: Odin::new(),
             strategies: vec![], //Todo: Either hardcode here or fetch from config
-        }))
+        }
     }
     //We will call this at the start of the function
     pub fn load_all(&mut self, tickers: Vec<String>) {

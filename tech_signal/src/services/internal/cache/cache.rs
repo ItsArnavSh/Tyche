@@ -1,9 +1,11 @@
-use crate::entity::candle::Candle;
+use std::collections::VecDeque;
+
+use crate::proto::{CandleSize, StockValue};
 use dashmap::DashMap;
 
 pub struct Cache {
     var_cache: DashMap<(String, String), f64>,
-    candles_cache: DashMap<(String, String), Vec<Candle>>,
+    candles_cache: DashMap<(String, CandleSize), VecDeque<StockValue>>,
 }
 
 impl Cache {
@@ -16,29 +18,17 @@ impl Cache {
 
     /// Push a new candle to the cache for a given (ticker, timeframe)
     /// Respects a fixed max length (optional, configurable later)
-    pub fn push_candle(&self, ticker: &str, tf: &str, candle: Candle, max_len: usize) {
-        let key = (ticker.to_string(), tf.to_string());
-        let mut vec = self.candles_cache.entry(key).or_insert_with(Vec::new);
-        vec.push(candle);
-        if vec.len() > max_len {
-            vec.remove(0); // remove oldest
-        }
+    pub fn push_candle(&self, ticker: &str, candle_size: CandleSize, candle: StockValue) {
+        let key = (ticker.to_string(), candle_size);
+        let mut vec = self.candles_cache.entry(key).or_insert_with(VecDeque::new);
+        vec.push_back(candle);
+        vec.remove(0); // remove oldest
     }
-
-    /// Get full vector of candles (cloned)
-    pub fn get_candles(&self, ticker: &str, tf: &str) -> Option<Vec<Candle>> {
-        self.candles_cache
-            .get(&(ticker.to_string(), tf.to_string()))
-            .map(|v| v.clone()) // returns a copy
+    pub fn put_candle(&self, ticker: &str, candle_size: CandleSize, vals: Vec<StockValue>) {
+        let key = (ticker.to_string(), candle_size);
+        self.candles_cache.insert(key, VecDeque::from(vals));
     }
-
-    /// Get the latest candle, if any
-    pub fn get_latest_candle(&self, ticker: &str, tf: &str) -> Option<Candle> {
-        self.candles_cache
-            .get(&(ticker.to_string(), tf.to_string()))
-            .and_then(|v| v.last().cloned())
-    }
-
+    //Todo: Add the retreival functions too
     /// Set variable cache (e.g., MA_15, RSI)
     pub fn set_var(&self, ticker: &str, var: &str, value: f64) {
         self.var_cache

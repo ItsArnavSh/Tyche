@@ -1,34 +1,37 @@
 use crate::{
-    proto::StockValue,
+    proto::{
+        SendBootSignalRequest, SendRollDataRequest, SendRollDataResponse, StockSeries, StockValue,
+    },
+    server::stock_handler::ActiveStocks,
     services::{
         internal::{redis::redis::RedisConn, repository::Repository},
         loadbalancer::lb::LoadBalancer,
         scheduler::ubee::UBee,
+        timer::timer::BotClock,
     },
 };
 use std::sync::{Arc, Mutex};
-#[derive(Debug, Default)]
 pub struct Server {
-    pub rediscon: RedisConn,
     pub scheduler: Arc<Mutex<UBee>>,
+    pub repo: Repository,
+    pub lb: LoadBalancer,
+    pub activeStocks: ActiveStocks,
 }
 
 impl Server {
     pub fn new(url: &str) -> Self {
-        let redisconn = RedisConn::new(url).unwrap();
         println!("Connection with Reddis Established");
         Server {
-            rediscon: redisconn,
+            repo: Repository::new(url),
+            lb: LoadBalancer::new(),
+            activeStocks: ActiveStocks::new(BotClock::new()),
             scheduler: Arc::new(Mutex::new(UBee::new())),
         }
     }
 
-    pub async fn start_server(&self) {
-        let repo = Repository::new("");
-        let lb = LoadBalancer::new();
-        let mut lb_guard = lb.lock().await;
+    pub async fn start_server(&mut self) {
         let tickers = vec![];
-        lb_guard.load_all(tickers);
+        self.lb.load_all(tickers);
 
         let no_threads = rayon::current_num_threads();
         println!("Starting server with {} threads", no_threads);
@@ -55,6 +58,34 @@ impl Server {
                 });
             }
         });
+    }
+    pub fn boot_loader(&self, stocks: SendBootSignalRequest) {
+        for ticker in stocks.hist {
+            let name = ticker.name;
+            for candles in ticker.series {
+                self.repo.cache.put_candle(name, candles.size(), candles.val);
+
+                }
+            }
+        }
+    }
+    pub fn roll_loader(&mut self, stocks: SendRollDataRequest) -> SendRollDataResponse {
+        let mut missing: Vec<StockSeries> = vec![];
+        for stock in stocks.stock {
+            let name = stock.name;
+            for val in stock.vals {
+                let size = val.size();
+                if self.activeStocks.stale_check(&name, size) {
+                    missing.push(StockSeries {
+                        name: name.clone(),
+                        size: size as i32,
+                    });
+                } else {
+                    self.repo.cache.push_candle(&name, size, val.val.unwrap());
+                }
+            }
+        }
+        SendRollDataResponse { missing: missing }
     }
     pub fn update_data(&self, stocks: Vec<StockValue>) {
         let ubee = Arc::clone(&self.scheduler);
