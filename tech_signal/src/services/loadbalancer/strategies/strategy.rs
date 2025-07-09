@@ -5,12 +5,12 @@ use std::collections::HashMap;
 pub type StratFunc = fn(&Repository, String);
 
 // Wrap both indicator and boot functions
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 struct StrategyPair {
     indicator: StratFunc,
     boot: StratFunc,
 }
-
+#[derive(Debug)]
 pub struct Odin {
     strategies: HashMap<CandleSize, Vec<StrategyPair>>,
 }

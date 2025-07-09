@@ -1223,6 +1223,7 @@ version = "0.1.0"
 dependencies = [
  "dashmap",
  "num_cpus",
+ "parking_lot",
  "prost",
  "prost-build",
  "prost-types",

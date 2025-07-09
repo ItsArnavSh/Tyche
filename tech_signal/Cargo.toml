@@ -16,6 +16,7 @@ serde_json = {version="1.0.140"}
 rayon = "1.10.0"
 num_cpus = "1.17.0"
 dashmap = "6.1.0"
+parking_lot = "0.12.4"
 
 [build-dependencies]
 tonic-build = "0.11.0"

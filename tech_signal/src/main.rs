@@ -32,7 +32,7 @@ impl RustService for RustyService {
     ) -> Result<Response<SendBootSignalResponse>, Status> {
         let data = request.into_inner();
         println!("Boot Signal Initiated");
-        self.server.boot_loader(data);
+        self.server.boot_loader(data).await;
         let response = SendBootSignalResponse { status: true };
         Ok(Response::new(response))
     }

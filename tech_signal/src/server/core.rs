@@ -10,11 +10,12 @@ use crate::{
         timer::timer::BotClock,
     },
 };
+use parking_lot;
 use std::sync::{Arc, Mutex};
 pub struct Server {
     pub scheduler: Arc<Mutex<UBee>>,
     pub repo: Arc<Repository>,
-    pub lb: Arc<Mutex<LoadBalancer>>,
+    pub lb: Arc<parking_lot::Mutex<LoadBalancer>>,
     pub activestocks: Arc<Mutex<ActiveStocks>>,
 }
 
@@ -24,7 +25,8 @@ impl Server {
         let stocks = Arc::new(Mutex::new(ActiveStocks::new(BotClock::new())));
         Server {
             repo: Arc::new(Repository::new(url)),
-            lb: Arc::new(Mutex::new(LoadBalancer::new())),
+            lb: Arc::new(parking_lot::Mutex::new(LoadBalancer::new())),
+
             activestocks: Arc::clone(&stocks),
             scheduler: Arc::new(Mutex::new(UBee::new())),
         }
@@ -32,9 +34,11 @@ impl Server {
 
     pub async fn start_server(&self) {
         let no_threads = rayon::current_num_threads();
-        let lb = Arc::clone(&self.lb);
+        LoadBalancer::new_and_start();
         let activestocks = Arc::clone(&self.activestocks);
         let repo = self.repo.clone();
+
+        let lb = Arc::new(&self.lb);
         //println!("Starting server with {} threads", no_threads);
         rayon::scope(|s| {
             for _ in 0..no_threads {
@@ -67,9 +71,9 @@ impl Server {
                             // 🔓 Then lock: lb
 
                             //println!("Waiting for Ubee 3");
-                            let mut lb_guard = lb.lock().unwrap();
-                            funcs = lb_guard.give_funcs(ticker, is_boot);
-
+                            {
+                                funcs = lb.lock().give_funcs(ticker, is_boot);
+                            }
                             for func in funcs {
                                 func(&repo, task.ticker.0.clone());
                             }
@@ -78,10 +82,13 @@ impl Server {
                                 let active = activestocks.lock().expect("Active Stocks Poisoned 3");
                                 active.mark_booted(task.ticker.0.clone(), task.ticker.1);
                             }
+                            {
+                                lb.lock().add_to_queue(task.ticker.0.clone(), task.ticker.1);
+                            }
                         }
 
                         if tasks.is_empty() {
-                            std::thread::sleep(std::time::Duration::from_millis(10000));
+                            std::thread::sleep(std::time::Duration::from_millis(500));
                         }
                     }
                 });
@@ -89,7 +96,7 @@ impl Server {
         });
     }
 
-    pub fn boot_loader(&self, stocks: SendBootSignalRequest) {
+    pub async fn boot_loader(&self, stocks: SendBootSignalRequest) {
         println!("[BOOT] Boot Signal Loading...");
 
         let mut roll_these: Vec<(String, CandleSize)> = vec![];
@@ -109,6 +116,9 @@ impl Server {
                 self.repo.cache.put_candle(&name, size, candles.clone().val);
 
                 roll_these.push((name.clone(), size));
+                {
+                    self.lb.lock().add_to_queue(name.clone(), size);
+                }
             }
         }
 
