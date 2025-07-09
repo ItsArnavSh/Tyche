@@ -1,8 +1,9 @@
+use dashmap::DashMap;
+
 use crate::{
     proto::CandleSize::{self},
     services::timer::timer::BotClock,
 };
-use std::collections::HashMap;
 
 impl CandleSize {
     pub fn duration_ms(&self) -> u64 {
@@ -16,51 +17,63 @@ impl CandleSize {
         }
     }
 }
-
+pub struct StockVal {
+    time: u64,
+    bootmode: bool,
+}
 pub struct ActiveStocks {
-    stocks: HashMap<String, u64>,
+    stocks: DashMap<(String, CandleSize), StockVal>,
     timer: BotClock,
 }
 
 impl ActiveStocks {
     pub fn new(timer: BotClock) -> Self {
         Self {
-            stocks: HashMap::new(),
+            stocks: DashMap::new(),
             timer,
         }
     }
 
-    fn make_key(name: &str, size: &CandleSize) -> String {
-        format!("{}:{:?}", name, size)
+    pub fn boot_check(&self, name: String, size: CandleSize) -> bool {
+        self.stocks.get(&(name, size)).unwrap().bootmode
     }
-
-    pub fn stale_check(&mut self, name: &str, size: CandleSize) -> bool {
-        let key = Self::make_key(name, &size);
+    pub fn stale_check(&mut self, name: String, size: CandleSize) -> bool {
         let now = self.timer.now_ms();
 
-        match self.stocks.get(&key) {
-            Some(&last_time) => {
-                let elapsed = now - last_time;
+        match self.stocks.get(&(name.clone(), size)) {
+            Some(last_time) => {
+                let elapsed = now - last_time.time;
                 let threshold = size.duration_ms() * 2;
 
                 if elapsed > threshold {
                     // Mark as stale
                     println!(
                         "[STALE] {} (elapsed {}ms > threshold {}ms)",
-                        key, elapsed, threshold
+                        name, elapsed, threshold
                     );
                     return true;
                 }
 
                 // Fresh, update timestamp
-                self.stocks.insert(key, now);
+                self.stocks.insert(
+                    (name, size).clone(),
+                    StockVal {
+                        time: now,
+                        bootmode: false,
+                    },
+                );
                 false
             }
             None => {
                 // New key → implicitly stale
-                self.stocks.insert(key.clone(), now);
-                println!("[STALE:NEW] {} first time seen", key);
-                false
+                self.stocks.insert(
+                    (name, size).clone(),
+                    StockVal {
+                        time: now,
+                        bootmode: false,
+                    },
+                );
+                true
             }
         }
     }

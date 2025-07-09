@@ -1,5 +1,4 @@
 use crate::services::internal::{cache::cache::Cache, redis::redis::RedisConn};
-#[derive(Debug, Default)]
 pub struct Repository {
     pub cache: Cache,
     pub redis: RedisConn,

@@ -32,10 +32,10 @@ message TickerHistory{
 enum CandleSize{
     SEC5 = 0;
     SEC30 = 1;
-    MIN1 = 3;
-    MIN15 = 4;
-    HOUR1 = 5;
-    DAY1 = 6;
+    MIN1 = 2;
+    MIN15 = 3;
+    HOUR1 = 4;
+    DAY1 = 5;
 }
 message Series{
     CandleSize size = 1;

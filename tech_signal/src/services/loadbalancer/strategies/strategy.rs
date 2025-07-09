@@ -1,32 +1,74 @@
+use crate::proto::CandleSize::{self, *};
 use crate::services::internal::repository::Repository;
+use std::collections::HashMap;
+// Function signature type alias
+pub type StratFunc = fn(Repository, String);
 
+// Wrap both indicator and boot functions
 #[derive(Clone)]
-pub struct Strategy {
-    pub functionid: u32,
-    pub candle_size: u64, //In milliseconds
-    pub alert: bool,
-    pub alert_candle_size: u64, //0 if alert is set to false
+struct StrategyPair {
+    indicator: StratFunc,
+    boot: StratFunc,
 }
 
 pub struct Odin {
-    indicators: Vec<fn(Repository, String)>,
-    startup_functions: Vec<fn(Repository, String)>,
+    strategies: HashMap<CandleSize, Vec<StrategyPair>>,
 }
 
 impl Odin {
     pub fn new() -> Self {
-        return Odin {
-            indicators: vec![moving_average_crossover],
-            startup_functions: vec![boot_moving_average_crossover],
-        };
+        let mut map: HashMap<CandleSize, Vec<StrategyPair>> = HashMap::new();
+
+        // Sample population for each candle size
+        map.insert(
+            Sec5,
+            vec![
+                StrategyPair {
+                    indicator: ma_cross_5s,
+                    boot: boot_ma_cross_5s,
+                },
+                StrategyPair {
+                    indicator: rsi_check_5s,
+                    boot: boot_rsi_check_5s,
+                },
+            ],
+        );
+
+        map.insert(
+            Min15,
+            vec![StrategyPair {
+                indicator: bollinger_bands_15m,
+                boot: boot_bollinger_bands_15m,
+            }],
+        );
+
+        Odin { strategies: map }
     }
-    pub fn get_by_id(&self, id: usize) -> fn(Repository, String) {
-        *self.indicators.get(id).unwrap()
-    }
-    pub fn boot_func(&self, id: usize) -> fn(Repository, String) {
-        *self.startup_functions.get(id).unwrap()
+
+    /// Fetch all functions (indicator or boot) for a given candle size
+    pub fn get_funcs(&self, candle: CandleSize, boot_mode: bool) -> Vec<StratFunc> {
+        self.strategies
+            .get(&candle)
+            .map(|pairs| {
+                pairs
+                    .iter()
+                    .map(|pair| if boot_mode { pair.boot } else { pair.indicator })
+                    .collect()
+            })
+            .unwrap_or_default()
     }
 }
 
-pub fn moving_average_crossover(_: Repository, _: String) {}
-pub fn boot_moving_average_crossover(_: Repository, _: String) {}
+//
+// Sample Functions
+//
+
+// --- 5s ---
+fn ma_cross_5s(_: Repository, _: String) {}
+fn boot_ma_cross_5s(_: Repository, _: String) {}
+fn rsi_check_5s(_: Repository, _: String) {}
+fn boot_rsi_check_5s(_: Repository, _: String) {}
+
+// --- 15m ---
+fn bollinger_bands_15m(_: Repository, _: String) {}
+fn boot_bollinger_bands_15m(_: Repository, _: String) {}

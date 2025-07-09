@@ -1,11 +1,12 @@
-use crate::{proto::StockValue, services::scheduler::ubee::util::first_n_primes};
+use crate::proto::CandleSize;
+use crate::server::stock_handler::ActiveStocks;
+use crate::services::scheduler::ubee::util::first_n_primes;
 use std::cmp::Ordering;
 use std::collections::{BinaryHeap, HashMap};
 use std::sync::Mutex;
 #[derive(Debug, Default, Clone)]
 pub struct Block {
-    pub ticker: String,
-    pub value: f32,
+    pub ticker: (String, CandleSize),
     pub priority: i32,
 }
 impl Ord for Block {
@@ -24,18 +25,19 @@ impl PartialOrd for Block {
         Some(self.cmp(other))
     }
 }
-#[derive(Debug, Default)]
-pub struct UBee {
+
+pub struct UBee<'a> {
     pub heap: BinaryHeap<Block>,
     pub core_count: usize,
     pub job_counter: usize,
     pub allot_no: usize,
     pub primes: Vec<usize>,
-    pub priority_map: HashMap<String, i32>,
+    pub priority_map: HashMap<(String, CandleSize), i32>,
     pub lock: Mutex<()>,
+    pub active_stocks: &'a ActiveStocks,
 }
-impl UBee {
-    pub fn new() -> Self {
+impl<'a> UBee<'a> {
+    pub fn new(stocks: &'a ActiveStocks) -> Self {
         let thread_no = num_cpus::get();
         println!("Just received count as {}", thread_no);
         UBee {
@@ -46,6 +48,7 @@ impl UBee {
             primes: first_n_primes(thread_no),
             priority_map: HashMap::new(),
             lock: Mutex::new(()),
+            active_stocks: stocks,
         }
     }
     pub fn give_jobs(&mut self) -> Vec<Block> {
@@ -66,32 +69,36 @@ impl UBee {
         self.allot_no = self.primes[self.job_counter];
         tasks
     }
-    pub fn update_heap(&mut self, newvals: Vec<StockValue>) {
+    pub fn update_heap(&mut self, newvals: Vec<(String, CandleSize)>, boot: bool) {
         let _guard = self.lock.lock().unwrap();
         //First we check for all the remaining values in heap
         println!("Clearing Stuff");
-        loop {
-            let block = self.heap.pop();
+        if !boot {
+            loop {
+                let block = self.heap.pop();
 
-            match block {
-                Some(stock_value) => {
-                    println!("{} was left", stock_value.ticker);
-                    self.priority_map
-                        .entry(stock_value.ticker.clone())
-                        .and_modify(|p| *p += 1)
-                        .or_insert(101); //Updated priorities
-                }
-                None => {
-                    println!("No blocks remain unseen");
-                    break;
+                match block {
+                    Some(stock_value) => {
+                        self.priority_map
+                            .entry(stock_value.ticker.clone())
+                            .and_modify(|p| *p += 1)
+                            .or_insert(101); //Updated priorities
+                    }
+                    None => {
+                        println!("No blocks remain unseen");
+                        break;
+                    }
                 }
             }
         }
         for val in newvals {
-            let prio = *self.priority_map.entry(val.name.clone()).or_insert(100);
+            let prio =
+                *self
+                    .priority_map
+                    .entry(val.clone())
+                    .or_insert(if boot { 1000 } else { 100 });
             self.heap.push(Block {
-                ticker: val.name,
-                value: val.close,
+                ticker: val,
                 priority: prio,
             });
         }
