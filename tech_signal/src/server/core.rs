@@ -1,13 +1,12 @@
 use crate::{
     proto::{
         CandleSize, SendBootSignalRequest, SendRollDataRequest, SendRollDataResponse, StockSeries,
-        StockValue,
     },
     server::stock_handler::ActiveStocks,
     services::{
-        internal::{redis::redis::RedisConn, repository::Repository},
+        internal::repository::Repository,
         loadbalancer::lb::LoadBalancer,
-        scheduler::ubee::UBee,
+        scheduler::ubee::{Block, UBee},
         timer::timer::BotClock,
     },
 };
@@ -31,7 +30,7 @@ impl Server {
         }
     }
 
-    pub async fn start_server(&mut self) {
+    pub async fn start_server(&self) {
         let no_threads = rayon::current_num_threads();
         let lb = Arc::clone(&self.lb);
         let activestocks = Arc::clone(&self.activestocks);
@@ -46,9 +45,11 @@ impl Server {
 
                 s.spawn(move |_| {
                     loop {
-                        let mut ubee = ubee.lock().unwrap();
-                        let tasks = ubee.give_jobs();
-
+                        let mut tasks: Vec<Block> = vec![];
+                        {
+                            let mut ubee = ubee.lock().unwrap();
+                            tasks = ubee.give_jobs();
+                        }
                         for task in &tasks {
                             let funcs = lb.lock().unwrap().give_funcs(
                                 task.ticker.clone(),
@@ -71,21 +72,39 @@ impl Server {
             }
         });
     }
+
     pub fn boot_loader(&self, stocks: SendBootSignalRequest) {
+        println!("[BOOT] Boot Signal Loading...");
+
         let mut roll_these: Vec<(String, CandleSize)> = vec![];
-        for ticker in stocks.hist {
+
+        for (i, ticker) in stocks.hist.into_iter().enumerate() {
             let name = ticker.name;
-            for candles in ticker.series {
-                self.repo
-                    .cache
-                    .put_candle(&name, candles.size(), candles.clone().val);
-                roll_these.push((name.clone(), candles.size()));
+            println!("[BOOT] Ticker {}: {}", i + 1, name);
+
+            for (j, candles) in ticker.series.into_iter().enumerate() {
+                let size = candles.size();
+                let val_count = candles.val.len();
+                println!(
+                    "[BOOT]   [{}] Size: {:?}, {} values",
+                    j + 1,
+                    size,
+                    val_count
+                );
+
+                self.repo.cache.put_candle(&name, size, candles.clone().val);
+                println!("[BOOT]   --> put_candle({}, {:?}, ...)", name, size);
+
+                roll_these.push((name.clone(), size));
             }
         }
+
+        println!("[BOOT] Total candles to roll: {}", roll_these.len());
         self.update_data(roll_these, true);
+        println!("[BOOT] Boot data update triggered ✅");
     }
 
-    pub fn roll_loader(&mut self, stocks: SendRollDataRequest) -> SendRollDataResponse {
+    pub fn roll_loader(&self, stocks: SendRollDataRequest) -> SendRollDataResponse {
         let mut missing: Vec<StockSeries> = vec![];
         let mut roll_these: Vec<(String, CandleSize)> = vec![];
         for stock in stocks.stock {
@@ -112,9 +131,24 @@ impl Server {
         self.update_data(roll_these, false);
         SendRollDataResponse { missing: missing }
     }
+
     pub fn update_data(&self, stocks: Vec<(String, CandleSize)>, boot: bool) {
-        let ubee: Arc<Mutex<UBee>> = Arc::clone(&self.scheduler);
-        let mut bee = ubee.lock().unwrap();
-        bee.update_heap(stocks, boot);
+        println!(
+            "[UPDATE] Updating {} stock(s) | Mode: {}",
+            stocks.len(),
+            if boot { "BOOT" } else { "ROLL" }
+        );
+
+        for (i, (name, size)) in stocks.iter().enumerate() {
+            println!("[UPDATE]   [{}] {} @ {:?}", i + 1, name, size);
+        }
+        {
+            let ubee: Arc<Mutex<UBee>> = Arc::clone(&self.scheduler);
+            let mut bee = ubee.lock().expect("Failed to acquire UBee lock");
+
+            println!("[UPDATE] Acquired lock on UBee, pushing to update_heap...");
+            bee.update_heap(stocks, boot);
+        }
+        println!("[UPDATE] Update heap complete ✅");
     }
 }

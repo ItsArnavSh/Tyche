@@ -1,5 +1,5 @@
 use std::{
-    collections::{BinaryHeap, HashMap, VecDeque},
+    collections::BinaryHeap,
     sync::Arc,
     time::{Duration, SystemTime},
 };
@@ -8,7 +8,6 @@ use dashmap::DashMap;
 use tokio::{spawn, sync::Mutex, time::sleep};
 
 use crate::{
-    entity::candle,
     proto::CandleSize,
     services::loadbalancer::strategies::strategy::{Odin, StratFunc},
 };

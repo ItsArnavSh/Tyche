@@ -1,6 +1,5 @@
 use std::sync::Arc;
 
-use tokio::sync::Mutex;
 use tonic::{Request, Response, Status, transport::Server};
 
 pub mod entity;
@@ -16,14 +15,12 @@ use proto::{
 };
 
 pub struct RustyService {
-    server: Arc<Mutex<server::core::Server>>,
+    server: Arc<server::core::Server>,
 }
 impl RustyService {
     pub fn new() -> Self {
         Self {
-            server: Arc::new(Mutex::new(server::core::Server::new(
-                "redis://127.0.0.1:6379/",
-            ))),
+            server: Arc::new(server::core::Server::new("redis://127.0.0.1:6379/")),
         }
     }
 }
@@ -34,7 +31,8 @@ impl RustService for RustyService {
         request: Request<SendBootSignalRequest>,
     ) -> Result<Response<SendBootSignalResponse>, Status> {
         let data = request.into_inner();
-        self.server.lock().await.boot_loader(data);
+        println!("Boot Signal Initiated");
+        self.server.boot_loader(data);
         let response = SendBootSignalResponse { status: true };
         Ok(Response::new(response))
     }
@@ -42,20 +40,18 @@ impl RustService for RustyService {
         &self,
         request: Request<SendRollDataRequest>,
     ) -> Result<Response<SendRollDataResponse>, Status> {
-        Ok(Response::new(
-            self.server.lock().await.roll_loader(request.into_inner()),
-        ))
+        Ok(Response::new(self.server.roll_loader(request.into_inner())))
     }
 }
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
-    let addr = "[::1]:50052".parse()?;
+    let addr = "127.0.0.1:50052".parse()?;
     let service = RustyService::new();
     let shared_service = Arc::clone(&service.server);
     tokio::spawn(async move {
         println!("Starting Calc Server");
-        shared_service.lock().await.start_server().await;
+        shared_service.start_server().await;
     });
     println!("Starting server at 50052");
     Server::builder()
