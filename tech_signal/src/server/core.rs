@@ -20,13 +20,13 @@ pub struct Server {
 
 impl Server {
     pub fn new(url: &str) -> Self {
-        println!("Connection with Reddis Established");
+        //println!("Connection with Reddis Established");
         let stocks = Arc::new(Mutex::new(ActiveStocks::new(BotClock::new())));
         Server {
             repo: Arc::new(Repository::new(url)),
             lb: Arc::new(Mutex::new(LoadBalancer::new())),
             activestocks: Arc::clone(&stocks),
-            scheduler: Arc::new(Mutex::new(UBee::new(Arc::clone(&stocks)))),
+            scheduler: Arc::new(Mutex::new(UBee::new())),
         }
     }
 
@@ -35,7 +35,7 @@ impl Server {
         let lb = Arc::clone(&self.lb);
         let activestocks = Arc::clone(&self.activestocks);
         let repo = self.repo.clone();
-        println!("Starting server with {} threads", no_threads);
+        //println!("Starting server with {} threads", no_threads);
         rayon::scope(|s| {
             for _ in 0..no_threads {
                 let ubee = Arc::clone(&self.scheduler);
@@ -45,27 +45,43 @@ impl Server {
 
                 s.spawn(move |_| {
                     loop {
-                        let mut tasks: Vec<Block> = vec![];
+                        let mut tasks;
                         {
-                            let mut ubee = ubee.lock().unwrap();
+                            //println!("Waiting for Ubee 1");
+                            let mut ubee = ubee.lock().expect("Ubee poisoned 1");
                             tasks = ubee.give_jobs();
+
+                            //println!("Waiting for Ubee Released");
                         }
                         for task in &tasks {
-                            let funcs = lb.lock().unwrap().give_funcs(
-                                task.ticker.clone(),
-                                activestocks
-                                    .lock()
-                                    .unwrap()
-                                    .boot_check(task.ticker.0.clone(), task.ticker.1),
-                            );
+                            let mut funcs;
+                            let ticker = task.ticker.clone();
+
+                            // 🔓 First lock: activestocks
+                            let is_boot = {
+                                //println!("Waiting for Active Stocks 2");
+                                let guard = activestocks.lock().expect("Active Stocks Poisoned 2");
+                                guard.boot_check(ticker.0.clone(), ticker.1)
+                            };
+
+                            // 🔓 Then lock: lb
+
+                            //println!("Waiting for Ubee 3");
+                            let mut lb_guard = lb.lock().unwrap();
+                            funcs = lb_guard.give_funcs(ticker, is_boot);
 
                             for func in funcs {
                                 func(&repo, task.ticker.0.clone());
                             }
+                            {
+                                //println!("Waiting for Active 3");
+                                let active = activestocks.lock().expect("Active Stocks Poisoned 3");
+                                active.mark_booted(task.ticker.0.clone(), task.ticker.1);
+                            }
                         }
 
                         if tasks.is_empty() {
-                            std::thread::sleep(std::time::Duration::from_millis(1000));
+                            std::thread::sleep(std::time::Duration::from_millis(10000));
                         }
                     }
                 });
@@ -78,50 +94,58 @@ impl Server {
 
         let mut roll_these: Vec<(String, CandleSize)> = vec![];
 
-        for (i, ticker) in stocks.hist.into_iter().enumerate() {
+        for (_, ticker) in stocks.hist.into_iter().enumerate() {
             let name = ticker.name;
-            println!("[BOOT] Ticker {}: {}", i + 1, name);
+            //println!("[BOOT] Ticker {}: {}", i + 1, name);
 
-            for (j, candles) in ticker.series.into_iter().enumerate() {
+            for (_, candles) in ticker.series.into_iter().enumerate() {
                 let size = candles.size();
-                let val_count = candles.val.len();
-                println!(
-                    "[BOOT]   [{}] Size: {:?}, {} values",
-                    j + 1,
-                    size,
-                    val_count
-                );
-
+                {
+                    self.activestocks
+                        .lock()
+                        .unwrap()
+                        .stale_check(name.clone(), size);
+                }
                 self.repo.cache.put_candle(&name, size, candles.clone().val);
-                println!("[BOOT]   --> put_candle({}, {:?}, ...)", name, size);
 
                 roll_these.push((name.clone(), size));
             }
         }
 
-        println!("[BOOT] Total candles to roll: {}", roll_these.len());
+        //println!("[BOOT] Total candles to roll: {}", roll_these.len());
         self.update_data(roll_these, true);
-        println!("[BOOT] Boot data update triggered ✅");
+        //println!("[BOOT] Boot data update triggered ✅");
     }
 
     pub fn roll_loader(&self, stocks: SendRollDataRequest) -> SendRollDataResponse {
+        //println!(
+
         let mut missing: Vec<StockSeries> = vec![];
         let mut roll_these: Vec<(String, CandleSize)> = vec![];
-        for stock in stocks.stock {
+
+        for (_, stock) in stocks.stock.into_iter().enumerate() {
             let name = stock.name;
-            for val in stock.vals {
+
+            for (_, val) in stock.vals.into_iter().enumerate() {
                 let size = val.size();
-                if self
-                    .activestocks
-                    .lock()
-                    .unwrap()
-                    .stale_check(name.clone(), size)
+
+                let mut is_stale = false;
                 {
+                    //println!("Waiting for Stale");
+                    is_stale = self
+                        .activestocks
+                        .lock()
+                        .expect("Stale Poisoned")
+                        .stale_check(name.clone(), size);
+                }
+                if is_stale {
+                    //println!("[ROLL]   --> Marked as MISSING");
                     missing.push(StockSeries {
                         name: name.clone(),
                         size: size as i32,
                     });
                 } else {
+                    //println!("[ROLL]   --> Data is fresh, pushing to cache");
                     self.repo.cache.push_candle(&name, size, val.val.unwrap());
                     roll_these.push((name.clone(), size));
                 }
@@ -129,26 +153,23 @@ impl Server {
         }
 
         self.update_data(roll_these, false);
-        SendRollDataResponse { missing: missing }
+        //println!("[ROLL] Roll data update triggered ✅");
+
+        SendRollDataResponse { missing }
     }
 
     pub fn update_data(&self, stocks: Vec<(String, CandleSize)>, boot: bool) {
-        println!(
-            "[UPDATE] Updating {} stock(s) | Mode: {}",
-            stocks.len(),
-            if boot { "BOOT" } else { "ROLL" }
-        );
-
         for (i, (name, size)) in stocks.iter().enumerate() {
-            println!("[UPDATE]   [{}] {} @ {:?}", i + 1, name, size);
+            //println!("[UPDATE]   [{}] {} @ {:?}", i + 1, name, size);
         }
         {
             let ubee: Arc<Mutex<UBee>> = Arc::clone(&self.scheduler);
+            //println!("Waiting for lock Ubee");
             let mut bee = ubee.lock().expect("Failed to acquire UBee lock");
 
-            println!("[UPDATE] Acquired lock on UBee, pushing to update_heap...");
+            //println!("[UPDATE] Acquired lock on UBee, pushing to update_heap...");
             bee.update_heap(stocks, boot);
         }
-        println!("[UPDATE] Update heap complete ✅");
+        //println!("[UPDATE] Update heap complete ✅");
     }
 }

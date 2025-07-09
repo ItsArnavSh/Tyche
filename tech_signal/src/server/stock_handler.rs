@@ -35,45 +35,40 @@ impl ActiveStocks {
     }
 
     pub fn boot_check(&self, name: String, size: CandleSize) -> bool {
-        self.stocks.get(&(name, size)).unwrap().bootmode
+        match self.stocks.get(&(name, size)) {
+            Some(val) => val.bootmode,
+            None => false,
+        }
     }
+    pub fn mark_booted(&self, name: String, size: CandleSize) {
+        if let Some(mut sta) = self.stocks.get_mut(&(name, size)) {
+            sta.bootmode = false;
+        }
+    }
+
     pub fn stale_check(&mut self, name: String, size: CandleSize) -> bool {
         let now = self.timer.now_ms();
+        let key = (name.clone(), size);
 
-        match self.stocks.get(&(name.clone(), size)) {
-            Some(last_time) => {
-                let elapsed = now - last_time.time;
+        match self.stocks.entry(key.clone()) {
+            dashmap::mapref::entry::Entry::Occupied(mut entry) => {
+                let elapsed = now - entry.get().time;
                 let threshold = size.duration_ms() * 2;
 
                 if elapsed > threshold {
-                    // Mark as stale
-                    println!(
-                        "[STALE] {} (elapsed {}ms > threshold {}ms)",
-                        name, elapsed, threshold
-                    );
-                    return true;
+                    entry.remove();
+                    true
+                } else {
+                    entry.get_mut().time = now;
+                    false
                 }
-
-                // Fresh, update timestamp
-                self.stocks.insert(
-                    (name, size).clone(),
-                    StockVal {
-                        time: now,
-                        bootmode: false,
-                    },
-                );
-                false
             }
-            None => {
-                // New key → implicitly stale
-                self.stocks.insert(
-                    (name, size).clone(),
-                    StockVal {
-                        time: now,
-                        bootmode: false,
-                    },
-                );
-                true
+            dashmap::mapref::entry::Entry::Vacant(entry) => {
+                entry.insert(StockVal {
+                    time: now,
+                    bootmode: true,
+                });
+                false
             }
         }
     }

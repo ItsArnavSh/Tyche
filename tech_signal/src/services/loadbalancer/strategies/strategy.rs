@@ -63,12 +63,32 @@ impl Odin {
 // Sample Functions
 //
 
-// --- 5s ---
-fn ma_cross_5s(_: &Repository, _: String) {}
-fn boot_ma_cross_5s(_: &Repository, _: String) {}
-fn rsi_check_5s(_: &Repository, _: String) {}
-fn boot_rsi_check_5s(_: &Repository, _: String) {}
+// --- 5s MA Cross Functions ---
+fn ma_cross_5s(_: &Repository, ticker: String) {
+    println!("[MA_CROSS_5S] Solving MA Cross for {}", ticker);
+}
 
-// --- 15m ---
-fn bollinger_bands_15m(_: &Repository, _: String) {}
-fn boot_bollinger_bands_15m(_: &Repository, _: String) {}
+fn boot_ma_cross_5s(_: &Repository, ticker: String) {
+    println!("[BOOT_MA_CROSS_5S] Bootstrapping MA Cross for {}", ticker);
+}
+
+// --- 5s RSI Functions ---
+fn rsi_check_5s(_: &Repository, ticker: String) {
+    println!("[RSI_CHECK_5S] Solving RSI Check for {}", ticker);
+}
+
+fn boot_rsi_check_5s(_: &Repository, ticker: String) {
+    println!("[BOOT_RSI_CHECK_5S] Bootstrapping RSI for {}", ticker);
+}
+
+// --- 15m Bollinger Bands Functions ---
+fn bollinger_bands_15m(_: &Repository, ticker: String) {
+    println!("[BOLLINGER_15M] Solving Bollinger Bands for {}", ticker);
+}
+
+fn boot_bollinger_bands_15m(_: &Repository, ticker: String) {
+    println!(
+        "[BOOT_BOLLINGER_15M] Bootstrapping Bollinger Bands for {}",
+        ticker
+    );
+}

@@ -1,9 +1,8 @@
 use crate::proto::CandleSize;
-use crate::server::stock_handler::ActiveStocks;
 use crate::services::scheduler::ubee::util::first_n_primes;
 use std::cmp::Ordering;
 use std::collections::{BinaryHeap, HashMap};
-use std::sync::{Arc, Mutex};
+use std::sync::Mutex;
 #[derive(Debug, Default, Clone)]
 pub struct Block {
     pub ticker: (String, CandleSize),
@@ -34,10 +33,9 @@ pub struct UBee {
     pub primes: Vec<usize>,
     pub priority_map: HashMap<(String, CandleSize), i32>,
     pub lock: Mutex<()>,
-    pub active_stocks: Arc<Mutex<ActiveStocks>>,
 }
 impl UBee {
-    pub fn new(stocks: Arc<Mutex<ActiveStocks>>) -> Self {
+    pub fn new() -> Self {
         let thread_no = num_cpus::get();
         println!("Just received count as {}", thread_no);
         UBee {
@@ -48,11 +46,9 @@ impl UBee {
             primes: first_n_primes(thread_no),
             priority_map: HashMap::new(),
             lock: Mutex::new(()),
-            active_stocks: stocks,
         }
     }
     pub fn give_jobs(&mut self) -> Vec<Block> {
-        let _guard = self.lock.lock().unwrap();
         if self.heap.is_empty() {
             return vec![];
         }
@@ -70,7 +66,6 @@ impl UBee {
         tasks
     }
     pub fn update_heap(&mut self, newvals: Vec<(String, CandleSize)>, boot: bool) {
-        let _guard = self.lock.lock().unwrap();
         //First we check for all the remaining values in heap
         println!("Clearing Stuff");
         if !boot {
