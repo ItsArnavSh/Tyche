@@ -14,46 +14,55 @@ use crate::{
 use std::sync::{Arc, Mutex};
 pub struct Server {
     pub scheduler: Arc<Mutex<UBee>>,
-    pub repo: Repository,
-    pub lb: LoadBalancer,
-    pub activestocks: ActiveStocks,
+    pub repo: Arc<Repository>,
+    pub lb: Arc<Mutex<LoadBalancer>>,
+    pub activestocks: Arc<Mutex<ActiveStocks>>,
 }
 
 impl Server {
     pub fn new(url: &str) -> Self {
         println!("Connection with Reddis Established");
-        let stocks = ActiveStocks::new(BotClock::new());
+        let stocks = Arc::new(Mutex::new(ActiveStocks::new(BotClock::new())));
         Server {
-            repo: Repository::new(url),
-            lb: LoadBalancer::new(),
-            activestocks: stocks,
-            scheduler: Arc::new(Mutex::new(UBee::new(&stocks))),
+            repo: Arc::new(Repository::new(url)),
+            lb: Arc::new(Mutex::new(LoadBalancer::new())),
+            activestocks: Arc::clone(&stocks),
+            scheduler: Arc::new(Mutex::new(UBee::new(Arc::clone(&stocks)))),
         }
     }
 
     pub async fn start_server(&mut self) {
-        let tickers = vec![];
-
         let no_threads = rayon::current_num_threads();
+        let lb = Arc::clone(&self.lb);
+        let activestocks = Arc::clone(&self.activestocks);
+        let repo = self.repo.clone();
         println!("Starting server with {} threads", no_threads);
         rayon::scope(|s| {
-            for i in 0..no_threads {
-                let ubee: Arc<UBee> = Arc::clone(&self.scheduler);
+            for _ in 0..no_threads {
+                let ubee = Arc::clone(&self.scheduler);
+                let lb = Arc::clone(&lb); // move safe clone
+                let activestocks = Arc::clone(&activestocks);
+                let repo = repo.clone(); // Arc or Clone
+
                 s.spawn(move |_| {
                     loop {
-                        let tasks = { ubee.give_jobs() };
-                        //To-do: Process the task one by one here
+                        let mut ubee = ubee.lock().unwrap();
+                        let tasks = ubee.give_jobs();
+
                         for task in &tasks {
-                            //task.ticker;
-                            let funcs = self.lb.give_funcs(
-                                task.ticker,
-                                self.activestocks.boot_check(task.ticker.0, task.ticker.1),
+                            let funcs = lb.lock().unwrap().give_funcs(
+                                task.ticker.clone(),
+                                activestocks
+                                    .lock()
+                                    .unwrap()
+                                    .boot_check(task.ticker.0.clone(), task.ticker.1),
                             );
-                            //Computing the functions one by one
+
                             for func in funcs {
-                                func(self.repo, task.ticker.0);
+                                func(&repo, task.ticker.0.clone());
                             }
                         }
+
                         if tasks.is_empty() {
                             std::thread::sleep(std::time::Duration::from_millis(1000));
                         }
@@ -63,40 +72,49 @@ impl Server {
         });
     }
     pub fn boot_loader(&self, stocks: SendBootSignalRequest) {
+        let mut roll_these: Vec<(String, CandleSize)> = vec![];
         for ticker in stocks.hist {
             let name = ticker.name;
             for candles in ticker.series {
                 self.repo
                     .cache
-                    .put_candle(&name, candles.size(), candles.val);
+                    .put_candle(&name, candles.size(), candles.clone().val);
+                roll_these.push((name.clone(), candles.size()));
             }
         }
+        self.update_data(roll_these, true);
     }
 
     pub fn roll_loader(&mut self, stocks: SendRollDataRequest) -> SendRollDataResponse {
         let mut missing: Vec<StockSeries> = vec![];
+        let mut roll_these: Vec<(String, CandleSize)> = vec![];
         for stock in stocks.stock {
             let name = stock.name;
             for val in stock.vals {
                 let size = val.size();
-                if self.activestocks.stale_check(name, size) {
+                if self
+                    .activestocks
+                    .lock()
+                    .unwrap()
+                    .stale_check(name.clone(), size)
+                {
                     missing.push(StockSeries {
                         name: name.clone(),
                         size: size as i32,
                     });
                 } else {
                     self.repo.cache.push_candle(&name, size, val.val.unwrap());
-                    let ubee = Arc::clone(&self.scheduler);
-                    let mut ubee = ubee.lock().unwrap();
-                    ubee.update_heap(newvals);
+                    roll_these.push((name.clone(), size));
                 }
             }
         }
+
+        self.update_data(roll_these, false);
         SendRollDataResponse { missing: missing }
     }
-    pub fn update_data(&self, stocks: Vec<(String, CandleSize)>) {
-        let ubee = Arc::clone(&self.scheduler);
+    pub fn update_data(&self, stocks: Vec<(String, CandleSize)>, boot: bool) {
+        let ubee: Arc<Mutex<UBee>> = Arc::clone(&self.scheduler);
         let mut bee = ubee.lock().unwrap();
-        bee.update_heap(stocks);
+        bee.update_heap(stocks, boot);
     }
 }

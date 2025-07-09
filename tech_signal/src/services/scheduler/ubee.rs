@@ -3,7 +3,7 @@ use crate::server::stock_handler::ActiveStocks;
 use crate::services::scheduler::ubee::util::first_n_primes;
 use std::cmp::Ordering;
 use std::collections::{BinaryHeap, HashMap};
-use std::sync::Mutex;
+use std::sync::{Arc, Mutex};
 #[derive(Debug, Default, Clone)]
 pub struct Block {
     pub ticker: (String, CandleSize),
@@ -26,7 +26,7 @@ impl PartialOrd for Block {
     }
 }
 
-pub struct UBee<'a> {
+pub struct UBee {
     pub heap: BinaryHeap<Block>,
     pub core_count: usize,
     pub job_counter: usize,
@@ -34,10 +34,10 @@ pub struct UBee<'a> {
     pub primes: Vec<usize>,
     pub priority_map: HashMap<(String, CandleSize), i32>,
     pub lock: Mutex<()>,
-    pub active_stocks: &'a ActiveStocks,
+    pub active_stocks: Arc<Mutex<ActiveStocks>>,
 }
-impl<'a> UBee<'a> {
-    pub fn new(stocks: &'a ActiveStocks) -> Self {
+impl UBee {
+    pub fn new(stocks: Arc<Mutex<ActiveStocks>>) -> Self {
         let thread_no = num_cpus::get();
         println!("Just received count as {}", thread_no);
         UBee {

@@ -2,7 +2,7 @@ use crate::proto::CandleSize::{self, *};
 use crate::services::internal::repository::Repository;
 use std::collections::HashMap;
 // Function signature type alias
-pub type StratFunc = fn(Repository, String);
+pub type StratFunc = fn(&Repository, String);
 
 // Wrap both indicator and boot functions
 #[derive(Clone)]
@@ -64,11 +64,11 @@ impl Odin {
 //
 
 // --- 5s ---
-fn ma_cross_5s(_: Repository, _: String) {}
-fn boot_ma_cross_5s(_: Repository, _: String) {}
-fn rsi_check_5s(_: Repository, _: String) {}
-fn boot_rsi_check_5s(_: Repository, _: String) {}
+fn ma_cross_5s(_: &Repository, _: String) {}
+fn boot_ma_cross_5s(_: &Repository, _: String) {}
+fn rsi_check_5s(_: &Repository, _: String) {}
+fn boot_rsi_check_5s(_: &Repository, _: String) {}
 
 // --- 15m ---
-fn bollinger_bands_15m(_: Repository, _: String) {}
-fn boot_bollinger_bands_15m(_: Repository, _: String) {}
+fn bollinger_bands_15m(_: &Repository, _: String) {}
+fn boot_bollinger_bands_15m(_: &Repository, _: String) {}
