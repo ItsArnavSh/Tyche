@@ -5,13 +5,17 @@ use crate::{
     server::stock_handler::ActiveStocks,
     services::{
         internal::repository::Repository,
-        loadbalancer::lb::LoadBalancer,
+        loadbalancer::lb::{LoadBalancer, queue_to_dict},
         scheduler::ubee::{Block, UBee},
         timer::timer::BotClock,
     },
 };
 use parking_lot;
-use std::sync::{Arc, Mutex};
+use std::{
+    sync::{Arc, Mutex},
+    u64::MAX,
+};
+use tokio::spawn;
 pub struct Server {
     pub scheduler: Arc<Mutex<UBee>>,
     pub repo: Arc<Repository>,
@@ -34,14 +38,20 @@ impl Server {
 
     pub async fn start_server(&self) {
         let no_threads = rayon::current_num_threads();
-        LoadBalancer::new_and_start();
         let activestocks = Arc::clone(&self.activestocks);
         let repo = self.repo.clone();
-
+        let lb_copy = Arc::clone(&self.lb);
+        println!("Booting UPPP");
+        tokio::spawn(async move {
+            println!("Starting Background Queue");
+            queue_to_dict(lb_copy).await;
+        });
+        println!("Keep Runtime alive");
+        tokio::time::sleep(std::time::Duration::from_secs(MAX)).await;
         let lb = Arc::new(&self.lb);
         //println!("Starting server with {} threads", no_threads);
         rayon::scope(|s| {
-            for _ in 0..no_threads {
+            for _ in 1..no_threads {
                 let ubee = Arc::clone(&self.scheduler);
                 let lb = Arc::clone(&lb); // move safe clone
                 let activestocks = Arc::clone(&activestocks);
@@ -75,6 +85,7 @@ impl Server {
                                 funcs = lb.lock().give_funcs(ticker, is_boot);
                             }
                             for func in funcs {
+                                println!("Executing");
                                 func(&repo, task.ticker.0.clone());
                             }
                             {

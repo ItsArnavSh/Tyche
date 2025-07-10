@@ -19,12 +19,6 @@ pub struct LoadBalancer {
 }
 
 impl LoadBalancer {
-    pub fn new_and_start() -> Arc<Self> {
-        println!("DEBUG: Creating and starting new LoadBalancer instance");
-        let lb = Arc::new(Self::new());
-        lb.start_process();
-        lb
-    }
     pub fn new() -> Self {
         println!("DEBUG: Creating new LoadBalancer instance");
         Self {
@@ -32,15 +26,6 @@ impl LoadBalancer {
             time_queue: Arc::new(Mutex::new(BinaryHeap::new())),
             odin: Odin::new(),
         }
-    }
-
-    pub fn start_process(self: &Arc<Self>) {
-        println!("DEBUG: Starting LoadBalancer process");
-        let lb = self.clone();
-        spawn(async move {
-            println!("DEBUG: Spawned async task for queue_to_dict");
-            lb.queue_to_dict().await;
-        });
     }
 
     pub fn give_funcs(&self, ticker: (String, CandleSize), boot: bool) -> Vec<StratFunc> {
@@ -79,65 +64,6 @@ impl LoadBalancer {
         };
         {
             self.time_queue.lock().push(task);
-        }
-    }
-
-    async fn queue_to_dict(&self) {
-        println!("DEBUG: Starting queue_to_dict main loop");
-        loop {
-            println!("DEBUG: Beginning loop iteration");
-
-            // Check if there are tasks ready to be processed
-            let ready_task = {
-                let mut queue;
-                {
-                    queue = self.time_queue.lock();
-                }
-                if let Some(top) = queue.peek() {
-                    if SystemTime::now() >= top.run_at {
-                        let task = queue.pop().unwrap();
-                        println!("DEBUG: Found ready task in queue: {:?}", task.ticker);
-                        Some(task)
-                    } else {
-                        println!("DEBUG: Next task not ready yet, will sleep");
-                        None
-                    }
-                } else {
-                    println!("DEBUG: No tasks in queue");
-                    None
-                }
-            };
-
-            // Process the ready task
-            if let Some(task) = ready_task {
-                println!("DEBUG: Processing task for ticker: {}", task.ticker.0);
-                self.add_to_dict(task.ticker.0, task.ticker.1);
-            }
-
-            // Determine sleep duration
-            let sleep_duration = {
-                let mut queue;
-                {
-                    queue = self.time_queue.lock();
-                }
-                if let Some(next_task) = queue.peek() {
-                    match next_task.run_at.duration_since(SystemTime::now()) {
-                        Ok(duration) => {
-                            println!("DEBUG: Next task in {:?}, sleeping until then", duration);
-                            duration.min(Duration::from_secs(1)) // Cap at 1 second max
-                        }
-                        Err(_) => {
-                            println!("DEBUG: Next task is overdue, minimal sleep");
-                            Duration::from_millis(10) // Very short sleep if overdue
-                        }
-                    }
-                } else {
-                    println!("DEBUG: No next task, sleeping for 1 second");
-                    Duration::from_secs(1)
-                }
-            };
-
-            sleep(sleep_duration).await;
         }
     }
 
@@ -213,4 +139,61 @@ async fn sleep_until(target: SystemTime) {
 fn add_time(duration: u64) -> SystemTime {
     let duration = Duration::from_millis(duration);
     SystemTime::now() + duration
+}
+pub async fn queue_to_dict(lb: Arc<Mutex<LoadBalancer>>) {
+    println!("DEBUG: Starting queue_to_dict main loop");
+    loop {
+        println!("DEBUG: Beginning loop iteration");
+
+        // Check if there are tasks ready to be processed
+        let ready_task = {
+            let lb_guard = lb.lock();
+            let mut queue_guard = lb_guard.time_queue.lock();
+
+            if let Some(top) = queue_guard.peek() {
+                if SystemTime::now() >= top.run_at {
+                    let task = queue_guard.pop().unwrap();
+                    println!("DEBUG: Found ready task in queue: {:?}", task.ticker);
+                    Some(task)
+                } else {
+                    println!("DEBUG: Next task not ready yet, will sleep");
+                    None
+                }
+            } else {
+                println!("DEBUG: No tasks in queue");
+                None
+            }
+        }; // Both locks are dropped here
+
+        // Process the ready task
+        if let Some(task) = ready_task {
+            println!("DEBUG: Processing task for ticker: {}", task.ticker.0);
+            let lb_guard = lb.lock();
+            lb_guard.add_to_dict(task.ticker.0, task.ticker.1);
+        }
+
+        // Determine sleep duration
+        let sleep_duration = {
+            let lb_guard = lb.lock();
+            let queue_guard = lb_guard.time_queue.lock();
+
+            if let Some(next_task) = queue_guard.peek() {
+                match next_task.run_at.duration_since(SystemTime::now()) {
+                    Ok(duration) => {
+                        println!("DEBUG: Next task in {:?}, sleeping until then", duration);
+                        duration.min(Duration::from_secs(1)) // Cap at 1 second max
+                    }
+                    Err(_) => {
+                        println!("DEBUG: Next task is overdue, minimal sleep");
+                        Duration::from_millis(10) // Very short sleep if overdue
+                    }
+                }
+            } else {
+                println!("DEBUG: No next task, sleeping for 1 second");
+                Duration::from_secs(1)
+            }
+        }; // Both locks are dropped here
+
+        sleep(sleep_duration).await;
+    }
 }
