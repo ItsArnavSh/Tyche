@@ -72,13 +72,13 @@ func (p *PyClient) CallGenerateKeywords(ctx context.Context, content string) ([]
 	return resp.Keywords, nil
 }
 
-func (p *PyClient) StreamFromHistoricalData(ctx context.Context,config entity.StockStreamConfig,StockChan chan<- entity.StockStream )error{
+func (p *PyClient) StreamFromHistoricalData(ctx context.Context, config entity.StockStreamConfig, StockChan chan<- entity.StockStream) error {
 	p.logger.Info("Sending Config to python")
 	fmt.Println(config)
-	stream,err := p.client.StreamHistorical(ctx, &pythonpb.StreamHistoricalRequest{Startdate:config.StartDate,Enddate: config.EndDate,Tickers: config.Tickers})
-	if err!=nil{
-		p.logger.Error("Could not stream data", zap.Error(err))	
-	return err
+	stream, err := p.client.StreamHistorical(ctx, &pythonpb.StreamHistoricalRequest{Startdate: config.StartDate, Enddate: config.EndDate, Tickers: config.Tickers})
+	if err != nil {
+		p.logger.Error("Could not stream data", zap.Error(err))
+		return err
 	}
 	for {
 		msg, err := stream.Recv()
@@ -108,9 +108,9 @@ func (p *PyClient) StreamFromHistoricalData(ctx context.Context,config entity.St
 
 		// Send to channel
 		StockChan <- entity.StockStream{
-			Timestamp: msg.Timestamp,
-			StockValues:    stockSlice,
+			Timestamp:   msg.Timestamp,
+			StockValues: stockSlice,
 		}
-}
+	}
 	return nil
 }
