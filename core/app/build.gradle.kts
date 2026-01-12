@@ -23,6 +23,10 @@ dependencies {
 
     // This dependency is used by the application.
     implementation(libs.guava)
+    implementation("com.typesafe:config:1.4.4")
+implementation("org.slf4j:slf4j-api:2.0.9")
+implementation("ch.qos.logback:logback-classic:1.4.11")
+
 }
 
 // Apply a specific Java toolchain to ease working on different environments.
@@ -34,7 +38,7 @@ java {
 
 application {
     // Define the main class for the application.
-    mainClass = "ItsArnavSh.Tyche.App"
+    mainClass = "org.Tyche.App"
 }
 
 tasks.named<Test>("test") {
