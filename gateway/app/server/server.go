@@ -24,6 +24,7 @@ type Server struct {
 	bucket              bucket.Bucket
 	producer            producer.Producer
 	sigchan             chan entity.Signal
+	Interface           producer.TradeInterface
 }
 
 func NewServer(ctx context.Context, addr []string) (*Server, error) {
@@ -49,6 +50,8 @@ func NewServer(ctx context.Context, addr []string) (*Server, error) {
 	if s.producer, err = producer.NewProducer(); err != nil {
 		return nil, fmt.Errorf("init producer: %w", err)
 	}
+	//Interface
+	s.Interface = producer.NewTradeInterface(s.grpc, s.producer)
 
 	// transaction handler
 	if s.transaction_handler, err = transaction.NewTransactionHandler(); err != nil {
@@ -87,5 +90,6 @@ func (s *Server) BootServer(ctx context.Context) error {
 	goSafe("signal-poller", func() { s.decision.StartSignalPoller() })
 	goSafe("decision-making", func() { s.decision.StartDecisionMaking(ctx, 5) })
 	goSafe("monitor", func() { s.monitor.StartMonitor(ctx) })
+	goSafe("trade-interface", func() { s.Interface.IllDoTheTalking(ctx) })
 	return nil
 }
