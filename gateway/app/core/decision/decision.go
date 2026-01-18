@@ -3,6 +3,7 @@ package decision
 import (
 	"context"
 	"fmt"
+	"gateway/app/core/monitor"
 	"gateway/app/util/bucket"
 	"gateway/app/util/entity"
 	"gateway/app/util/transaction"
@@ -15,13 +16,15 @@ type DecisionLayer struct {
 	transaction    transaction.TransactionHandler
 	bucket         bucket.Bucket
 	signal_channel <-chan entity.Signal
+	monitor        *monitor.TradeMonitor
 }
 
-func NewDecisionLayer(th transaction.TransactionHandler, bucket bucket.Bucket, sig <-chan entity.Signal) DecisionLayer {
+func NewDecisionLayer(th transaction.TransactionHandler, bucket bucket.Bucket, sig <-chan entity.Signal, monitor *monitor.TradeMonitor) DecisionLayer {
 	return DecisionLayer{
 		transaction:    th,
 		bucket:         bucket,
 		signal_channel: sig,
+		monitor:        monitor,
 	}
 }
 
@@ -117,5 +120,6 @@ func (d *DecisionLayer) considerChoices(choices []entity.SignalConf) []entity.Tr
 func (d *DecisionLayer) BeginTransaction(insts []entity.TransactionInstruction) {
 	for _, inst := range insts {
 		d.transaction.Process(inst)
+		d.monitor.AddPosition(inst)
 	}
 }
