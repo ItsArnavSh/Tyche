@@ -1,10 +1,13 @@
 package entity
 
-type action int
+import "time"
+
+type Action int
 
 const (
-	BUY action = iota
+	BUY Action = iota
 	SELL
+	HOLD
 	ADD
 	REMOVE
 )
@@ -19,15 +22,32 @@ const (
 
 type currency int
 
-type TransactionInstruction struct {
-	Ticker   string
-	Action   action //BUY SELL
-	Quantity uint32
-	Price    float64
+func (a Action) String() string {
+	switch a {
+	case BUY:
+		return "BUY"
+	case SELL:
+		return "SELL"
+	case HOLD:
+		return "HOLD"
+	default:
+		return "UNKNOWN"
+	}
 }
 
+type TransactionInstruction struct {
+	Ticker     string
+	Action     Action
+	Quantity   uint32
+	Price      float64
+	Confidence float64
+	Reason     string
+	MaxVal     float64
+	SellAfter  time.Time
+	MinValSell float64
+}
 type BudgetModification struct {
 	Amount   float64
-	Action   action // ADD REMOVE
+	Action   Action // ADD REMOVE
 	Platform platform
 }

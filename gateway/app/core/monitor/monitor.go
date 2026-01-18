@@ -1,9 +1,13 @@
 package monitor
 
-import "gateway/app/util/transaction"
+import (
+	"gateway/app/util/entity"
+	"gateway/app/util/transaction"
+)
 
 type TradeMonitor struct {
 	TransactionHandler transaction.TransactionHandler
+	ActivePositions    []entity.TransactionInstruction
 }
 
 func NewTradeMonitor(th transaction.TransactionHandler) TradeMonitor {

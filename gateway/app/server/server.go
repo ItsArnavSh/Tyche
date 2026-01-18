@@ -13,13 +13,19 @@ type Server struct {
 	message_broker *messagebroker.RedisQueue
 }
 
-func (s *Server) BootServer(ctx context.Context) {
+func NewServer(ctx context.Context, addr []string) (*Server, error) {
+	s := &Server{}
+	s.server_addr = addr
 	var err error
 	s.grpc, err = grpc.NewGrpcClient(s.server_addr)
 	if err != nil {
-		return
+		return nil, err
 	}
 	s.message_broker, err = messagebroker.NewRedisQueue("localhost:6379", "", 0, "signals")
+	return s, nil
+}
+func (s *Server) BootServer(ctx context.Context) {
 	SignalChannel := make(chan entity.Signal)
-	s.message_broker.Poll(ctx, SignalChannel)
+	go s.message_broker.Poll(ctx, SignalChannel)
+
 }

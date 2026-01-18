@@ -13,6 +13,6 @@ type Producer interface {
 
 var _ Producer = &fakeval.FakeValGen{}
 
-func NewProducer() {
-
+func NewProducer() (*Producer, error) {
+	return nil, nil
 }
