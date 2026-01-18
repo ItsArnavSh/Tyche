@@ -1,8 +1,8 @@
 package fakeval
 
 import (
-	"gateway/app/util"
 	"gateway/app/util/entity"
+	genutil "gateway/app/util/gen_util"
 )
 
 type FakeValGen struct {
@@ -51,7 +51,7 @@ func (f *FakeValGen) BootRequest(stocks []entity.MonoCandle) []entity.TickerHist
 
 			var candles []entity.CandleData
 			for i := 0; i < f.candleCount; i++ {
-				candle := util.CandleGen(price)
+				candle := genutil.CandleGen(price)
 				candles = append(candles, candle)
 				price = candle.Close
 			}
@@ -97,7 +97,7 @@ func (f *FakeValGen) RollRequest(stocks []entity.MonoCandle) []entity.LatestVal 
 		firstIteration := true
 
 		for size := range sizes {
-			candle := util.CandleGen(currentPrice)
+			candle := genutil.CandleGen(currentPrice)
 			if firstIteration {
 				firstCandle = candle
 				firstIteration = false
@@ -120,4 +120,7 @@ func (f *FakeValGen) RollRequest(stocks []entity.MonoCandle) []entity.LatestVal 
 	}
 
 	return result
+}
+func (f *FakeValGen) GetCurrentValue(name string) float64 {
+	return f.currentPrices[name]
 }

@@ -1,5 +1,10 @@
 package decision
 
+import (
+	"gateway/app/util/bucket"
+	"gateway/app/util/transaction"
+)
+
 //Todo: Decide when to start the decision maker
 // When started, pick the top 3 stocks which you can buy 4 units of.
 // Top in terms of confidence
@@ -9,3 +14,19 @@ package decision
 // Now just try to buy 1 till the conf is increasing, else pick something else
 //
 // Or actually just keep it dynamic like pick the top one, and if it varies from top then sth idk lemme see later
+
+type DecisionLayer struct {
+	transaction transaction.TransactionHandler
+	bucket      bucket.Bucket
+}
+
+func NewDecisionLayer(th transaction.TransactionHandler, bucket bucket.Bucket) DecisionLayer {
+	return DecisionLayer{
+		transaction: th,
+		bucket:      bucket,
+	}
+}
+
+func StartDecisionServer() {
+
+}

@@ -1,10 +1,16 @@
 package entity
 
-import "time"
+import (
+	"time"
+)
 
 type Signal struct {
-	Name       string
-	Confidence float64
-	Size       CandleSize
-	Time       time.Time
+	Name       string     `json:"name"`
+	Confidence float64    `json:"confidence"`
+	Size       CandleSize `json:"size"`
+	Time       time.Time  `json:"time"`
+}
+type SignalConf struct {
+	Name          string
+	ResultantConf float64
 }

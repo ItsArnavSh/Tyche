@@ -2,8 +2,9 @@ package bucket
 
 import (
 	"fmt"
-	"gateway/app/util"
+	"gateway/app/interface/producer"
 	"gateway/app/util/entity"
+	util "gateway/app/util/gen_util"
 	"time"
 )
 
@@ -12,8 +13,12 @@ import (
 // On running GetConfidence, we scan through all the active signals
 // And also remove the irrelevant ones, and basically plot the value on an exponential decay curve
 // It becomes irrelevant when it is past the ticker size expiry date
+//
+//
+
 type Bucket struct {
 	DecayMap map[string]util.Set[entity.Signal]
+	Producer producer.Producer
 }
 
 func NewBucket() Bucket {
@@ -68,4 +73,14 @@ func (b *Bucket) SignalBucket(signal entity.Signal) {
 		b.DecayMap[signal.Name] = util.NewSet[entity.Signal]()
 	}
 	b.DecayMap[signal.Name].Add(signal)
+}
+
+func (b *Bucket) GetTopNinBudget(N int, budget float64) []entity.SignalConf {
+	pq := util.NewBoundedMaxHeap(N)
+	for key, _ := range b.DecayMap {
+		if budget >= b.Producer.GetCurrentValue(key) {
+			pq.Push(entity.SignalConf{Name: key, ResultantConf: b.convertToConfidence(key)})
+		}
+	}
+	return pq.GetSorted()
 }

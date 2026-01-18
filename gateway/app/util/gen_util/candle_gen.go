@@ -1,4 +1,4 @@
-package util
+package genutil
 
 import (
 	"gateway/app/util/entity"

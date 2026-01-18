@@ -1,4 +1,4 @@
-package util
+package genutil
 
 type Set[T comparable] map[T]struct{}
 
@@ -27,4 +27,12 @@ func (s Set[T]) Clear() {
 	for k := range s {
 		delete(s, k)
 	}
+}
+
+func (s Set[T]) ListAll() []T {
+	var list []T
+	for k := range s {
+		list = append(list, k)
+	}
+	return list
 }

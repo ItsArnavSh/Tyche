@@ -1,8 +1,8 @@
 package transaction
 
 import (
-	"gateway/app/core/internal/transaction/paper"
 	"gateway/app/util/entity"
+	"gateway/app/util/transaction/paper"
 )
 
 type TransactionHandler interface {
