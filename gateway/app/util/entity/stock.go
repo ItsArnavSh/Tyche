@@ -4,7 +4,7 @@ type CandleSize int
 
 type TickerHistory struct {
 	Name    string
-	history CandleSeries
+	History CandleSeries
 }
 type MonoCandle struct {
 	Name string
@@ -12,12 +12,16 @@ type MonoCandle struct {
 }
 type CandleSeries struct {
 	Size CandleSize
-	data []CandleData
+	Data []CandleData
 }
 type CandleData struct {
 	High   float64
 	Low    float64
 	Open   float64
 	Close  float64
-	Volume float64
+	Volume int64
+}
+type LatestVal struct {
+	Stock  MonoCandle
+	Candle CandleData
 }

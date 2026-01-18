@@ -1,46 +1,48 @@
 syntax = "proto3";
-import "google/protobuf/empty.proto";
 package stockrec;
-option go_package =  "gateway/proto/pb";
+
+import "google/protobuf/empty.proto";
+
+option go_package = "gateway/proto/pb";
 service RustService {
   rpc SendRollData(SendRollDataRequest) returns (SendRollDataResponse);
   rpc SendBootSignal(SendBootSignalRequest) returns (google.protobuf.Empty);
   rpc SendKillSignal(SendKillSignalRequest) returns (google.protobuf.Empty);
 }
-message SendKillSignalRequest{
-    repeated string name = 1;
+message SendKillSignalRequest {
+  repeated string name = 1;
 }
-message SendBootSignalRequest{
-    repeated TickerHistory hist = 1;
-}
-
-message SendRollDataRequest{
-    repeated StockUpdate stock = 1;
+message SendBootSignalRequest {
+  repeated TickerHistory hist = 1;
 }
 
-message SendRollDataResponse{
-    repeated StockSeries missing = 1;
+message SendRollDataRequest {
+  repeated StockUpdate stock = 1;
 }
 
-message StockSeries{
-    string name  = 1;
-    CandleSize size = 2;
+message SendRollDataResponse {
+  repeated StockSeries missing = 1;
 }
-message TickerHistory{
-    string name = 1;
-    repeated Series series = 2;
+
+message StockSeries {
+  string name = 1;
+  CandleSize size = 2;
 }
-enum CandleSize{
-    SEC5 = 0;
-    SEC30 = 1;
-    MIN1 = 2;
-    MIN15 = 3;
-    HOUR1 = 4;
-    DAY1 = 5;
+message TickerHistory {
+  string name = 1;
+  repeated Series series = 2;
 }
-message Series{
-    CandleSize size = 1;
-    repeated StockValue val = 2;
+enum CandleSize {
+  SEC5 = 0;
+  SEC30 = 1;
+  MIN1 = 2;
+  MIN15 = 3;
+  HOUR1 = 4;
+  DAY1 = 5;
+}
+message Series {
+  CandleSize size = 1;
+  repeated StockValue val = 2;
 }
 
 message StockValue {
@@ -49,11 +51,11 @@ message StockValue {
   float high = 3;
   float low = 4;
 }
-message StockUpdate{
-    string name = 1;
-    repeated LatestStockVals vals = 2;
+message StockUpdate {
+  string name = 1;
+  repeated LatestStockVals vals = 2;
 }
-message LatestStockVals{
-    CandleSize size = 1;
-    StockValue val = 2;
+message LatestStockVals {
+  CandleSize size = 1;
+  StockValue val = 2;
 }
