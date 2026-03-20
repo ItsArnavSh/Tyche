@@ -58,7 +58,7 @@ public class LoadBalancer {
     }
 
     public void add_to_queue(PriorityBlock ticker) {
-        System.out.println("Aaaah");
+        // System.out.println("Aaaah");
         var task = new TimedTask(ticker);
         this.lock.lock();
         try {
@@ -107,7 +107,8 @@ public class LoadBalancer {
 
                 lock.lock();
                 try {
-                    System.out.println("Making task available");
+                    System.out
+                            .println("Task is ready to be run " + task.ticker.name + " " + task.ticker.size.toString());
                     add_to_dict(task.ticker.name, task.ticker.size);
                 } finally {
                     lock.unlock();

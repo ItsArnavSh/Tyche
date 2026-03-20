@@ -1,0 +1,74 @@
+syntax = "proto3";
+
+package stockrec.v1;
+
+import "google/protobuf/empty.proto";
+
+option go_package = "gateway/proto/pb";
+
+service RustService {
+  rpc SendRollData(SendRollDataRequest) returns (SendRollDataResponse);
+  rpc SendBootSignal(SendBootSignalRequest) returns (SendBootSignalResponse);
+  rpc SendKillSignal(SendKillSignalRequest) returns (SendKillSignalResponse);
+}
+
+message SendRollDataRequest {
+  repeated StockUpdate stock = 1;
+}
+
+message SendRollDataResponse {
+  repeated StockSeries missing = 1;
+}
+
+message SendBootSignalRequest {
+  repeated TickerHistory hist = 1;
+}
+
+message SendBootSignalResponse {}
+
+message SendKillSignalRequest {
+  repeated string name = 1;
+}
+
+message SendKillSignalResponse {}
+
+enum CandleSize {
+  CANDLE_SIZE_UNSPECIFIED = 0;
+  CANDLE_SIZE_SEC30 = 1;
+  CANDLE_SIZE_MIN1 = 2;
+  CANDLE_SIZE_MIN15 = 3;
+  CANDLE_SIZE_HOUR1 = 4;
+  CANDLE_SIZE_DAY1 = 5;
+}
+
+message StockSeries {
+  string name = 1;
+  CandleSize size = 2;
+}
+
+message TickerHistory {
+  string name = 1;
+  repeated Series series = 2;
+}
+
+message Series {
+  CandleSize size = 1;
+  repeated StockValue val = 2;
+}
+
+message StockValue {
+  float open = 1;
+  float close = 2;
+  float high = 3;
+  float low = 4;
+}
+
+message StockUpdate {
+  string name = 1;
+  repeated LatestStockVals vals = 2;
+}
+
+message LatestStockVals {
+  CandleSize size = 1;
+  StockValue val = 2;
+}

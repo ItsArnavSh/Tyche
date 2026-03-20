@@ -24,7 +24,7 @@ public class StockHandler {
         var status = this.active_stocks.get(ticker);
         if (status == null) {
 
-            System.out.println("So it was not known");
+            // System.out.println("So it was not known");
             this.active_stocks.put(ticker, new StockVal(timer.time_elapsed(), false));
 
         } else {

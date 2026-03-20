@@ -24,8 +24,16 @@ dependencies {
     // This dependency is used by the application.
     implementation(libs.guava)
     implementation("com.typesafe:config:1.4.4")
-implementation("org.slf4j:slf4j-api:2.0.9")
-implementation("ch.qos.logback:logback-classic:1.4.11")
+    implementation("org.slf4j:slf4j-api:2.0.9")
+    implementation("ch.qos.logback:logback-classic:1.4.11")
+
+implementation("com.google.protobuf:protobuf-java:3.25.3")
+implementation("io.grpc:grpc-stub:1.68.1")
+implementation("io.grpc:grpc-protobuf:1.68.1")
+implementation("io.grpc:grpc-netty-shaded:1.68.1")
+    implementation("redis.clients:jedis:5.1.0")
+    compileOnly("javax.annotation:javax.annotation-api:1.3.2") // needed by grpc stubs
+
 
 }
 
@@ -44,4 +52,25 @@ application {
 tasks.named<Test>("test") {
     // Use JUnit Platform for unit tests.
     useJUnitPlatform()
+}
+// tasks.register<Exec>("bufGenerate") {
+//     commandLine("buf", "generate")
+//     inputs.dir("src/main/proto")
+//     outputs.dir("build/generated/source/proto/main")
+// }
+
+// tasks.named("compileJava") {
+//     dependsOn("bufGenerate")
+// }
+
+sourceSets {
+    main {
+        java {
+            srcDirs(
+                "src/main/java",
+                "build/generated/source/proto/main/java",
+                "build/generated/source/proto/main/grpc"
+            )
+        }
+    }
 }

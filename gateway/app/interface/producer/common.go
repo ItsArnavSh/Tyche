@@ -2,7 +2,7 @@ package producer
 
 import (
 	"context"
-	"gateway/app/server/grpc"
+	"gateway/app/internal/grpc"
 	"gateway/app/util/entity"
 	"sync"
 	"time"

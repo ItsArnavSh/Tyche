@@ -20,6 +20,14 @@ public class StockInterface {
     }
 
     public void StockProcess() {
+
+        if (org.Tyche.Config.SIMULATION_MODE) {
+            try {
+                Thread.sleep(5000);
+            } catch (Exception e) {
+            }
+            System.out.println("Sending in stock data!!");
+        }
         // Initial Boot
         var req = new ArrayList<PriorityBlock>();
         var stocks = TargetStocks.stocks;

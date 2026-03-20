@@ -5,8 +5,8 @@ import org.Tyche.src.internal.cache.Repository;
 
 public class StrategyEntity {
     public static class StartParams {
-        Repository repo;
-        Context context;
+        public Repository repo;
+        public Context context;
 
         public StartParams(Repository repo, Context context) {
             this.context = context;

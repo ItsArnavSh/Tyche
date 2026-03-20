@@ -6,11 +6,15 @@ public class F_Demo extends BaseFunction {
 
     @Override
     public void Boot(StartParams params) {
-        BaseFunction.logger.info("Booted into demo");
+        System.out.println("Booted into demo");
     }
 
     @Override
     public void Roll(StartParams params) {
-        BaseFunction.logger.info("Rolling Demo");
+        System.out.println("Inside Rolling F_DEMO");
+        try {
+            Thread.sleep(2000);
+        } catch (Exception e) {
+        }
     }
 }

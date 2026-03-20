@@ -1,5 +1,8 @@
 package org.Tyche.src.core.engine.Workers;
 
+import static io.grpc.MethodDescriptor.newBuilder;
+
+import java.io.ObjectInputFilter.Config;
 import java.util.ArrayList;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
@@ -9,6 +12,7 @@ import org.Tyche.src.core.engine.Scheduler.Scheduler;
 import org.Tyche.src.entity.CoreAPI.BootRequest;
 import org.Tyche.src.entity.CoreAPI.RollRequest;
 import org.Tyche.src.entity.Scheduler_Entity.PriorityBlock;
+import org.Tyche.src.entity.StrategyEntity.Context;
 import org.Tyche.src.entity.StrategyEntity.StartParams;
 import org.Tyche.src.internal.cache.Repository;
 import org.slf4j.Logger;
@@ -34,19 +38,30 @@ public class Rayon {
    }
 
    public void BootThreads() {
-      Runnable process = () -> {
-         // this.logger.info("Core Spawned");
-         ThreadTask();
-      };
-      this.cores = Runtime.getRuntime().availableProcessors();
+
+      this.cores = org.Tyche.Config.SIMULATION_MODE ? 4 : Runtime.getRuntime().availableProcessors();
       this.executor = Executors.newFixedThreadPool(cores);
       System.out.print(cores);
       for (int i = 0; i < cores; i++) {
+         var worker_id = i;
+         Runnable process = () -> {
+            // this.logger.info("Core Spawned");
+            ThreadTask(worker_id);
+         };
          executor.submit(process);
       }
    }
 
-   private void ThreadTask() {
+   private void ThreadTask(int worker_id) {
+      logger.debug("Worker " + worker_id + " is Booting");
+
+      if (org.Tyche.Config.SIMULATION_MODE) {
+         try {
+            Thread.sleep(2000);
+         } catch (Exception e) {
+         }
+         logger.debug("Worker " + worker_id + " is Booted");
+      }
       for (;;) {
 
          // logger.info("Asking for a job");
@@ -55,7 +70,7 @@ public class Rayon {
 
             // logger.debug("No Jobs available");
             try {
-               Thread.sleep(1000);
+               Thread.sleep(5000);
             } catch (Exception e) {
             }
          }
@@ -63,7 +78,7 @@ public class Rayon {
             if (job.equals(null)) {
                try {
                   // logger.debug("No Jobs available");
-                  Thread.sleep(1000);
+                  Thread.sleep(5000);
                } catch (Exception e) {
                }
                continue;
@@ -74,7 +89,7 @@ public class Rayon {
             // this.logger.debug("Boot check: " + is_boot);
             var funcs = this.load_balancer.give_funcs(job, is_boot);
             if (funcs == null || funcs.size() == 0) {
-               System.out.println("No funcs");
+               // System.out.println("No funcs");
                try {
                   // logger.debug("No Jobs available");
                   Thread.sleep(1000);
@@ -84,6 +99,8 @@ public class Rayon {
             }
             // this.logger.debug("Func size: " + funcs.size());
             for (var func : funcs) {
+               System.out.println(
+                     "Running " + func.toString() + " On " + job.name + " " + job.size + " " + " Worker: " + worker_id);
                func.accept(r);
             }
 
@@ -100,7 +117,7 @@ public class Rayon {
    }
 
    public void boot_loader(BootRequest breq) {
-      System.out.println("In the Boot Loader");
+      // System.out.println("Received a Boot Request");
       var roll_these = new ArrayList<PriorityBlock>();
       for (var stock_history : breq.history) {
          var name = stock_history.name;
@@ -119,7 +136,7 @@ public class Rayon {
 
    public ArrayList<PriorityBlock> roll_loader(RollRequest rreq) {
 
-      System.out.println("In the Roll Loader");
+      // System.out.println("Received a roll request");
       var missing = new ArrayList<PriorityBlock>();
       var roll_these = new ArrayList<PriorityBlock>();
       for (var stock_update : rreq.update) {

@@ -12,7 +12,6 @@ public class TimedTask implements Delayed {
     public TimedTask(PriorityBlock ticker) {
         this.run_at = System.currentTimeMillis() + ticker.size.get_duration_millis();
         this.ticker = ticker;
-        System.out.println(System.currentTimeMillis() + " -> " + this.run_at);
 
     }
 
@@ -21,7 +20,6 @@ public class TimedTask implements Delayed {
         var delay = unit.convert(
                 run_at - System.currentTimeMillis(),
                 TimeUnit.MILLISECONDS);
-        System.out.println("Run at is at: " + this.run_at % 100000);
         return delay;
     }
 

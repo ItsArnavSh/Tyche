@@ -6,6 +6,7 @@ import java.util.HashMap;
 import java.util.PriorityQueue;
 import java.util.concurrent.locks.ReentrantLock;
 
+import org.Tyche.Config;
 import org.Tyche.src.entity.Scheduler_Entity.PriorityBlock;
 import org.Tyche.src.entity.Scheduler_Entity.PriorityMapVal;
 
@@ -43,15 +44,14 @@ public class Scheduler {
     }
 
     public void UpdateHeap(ArrayList<PriorityBlock> tickers, boolean boot) {
-
+        // if (Config.SIMULATION_MODE)
+        // System.out.println("New Data is updating the PQ");
         this.lock.lock();
         try {
             if (!boot) {
                 while (!this.pq.isEmpty()) {
                     var block = pq.poll();
 
-                    System.out
-                            .println(block.name + block.size + " Curr time: " + (System.currentTimeMillis() % 100000));
                     PriorityMapVal temp = new PriorityMapVal(block.name, block.size);
                     var priority = this.priority_map.get(temp);
                     if (priority == null) {

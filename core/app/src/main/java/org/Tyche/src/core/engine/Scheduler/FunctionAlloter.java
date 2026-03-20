@@ -4,6 +4,7 @@ import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.function.Consumer;
 
+import org.Tyche.Config;
 import org.Tyche.src.core.engine.Scheduler.Functions.F_Demo;
 import org.Tyche.src.entity.CandleSize;
 import org.Tyche.src.entity.StrategyEntity.StartParams;
@@ -24,6 +25,7 @@ public class FunctionAlloter {
         demo = new F_Demo();
         register(size, demo::Boot, demo::Roll);
         // Todo: Insert the functions from here
+
         size = CandleSize.min1;
         demo = new F_Demo();
         register(size, demo::Boot, demo::Roll);
@@ -39,7 +41,7 @@ public class FunctionAlloter {
     };
 
     ArrayList<Consumer<StartParams>> get_size_funcs(CandleSize size, boolean boot) {
-        System.out.println("Sending " + size);
+        // System.out.println("Sending " + size);
         if (boot)
             return this.boot_func.get(size);
         else
