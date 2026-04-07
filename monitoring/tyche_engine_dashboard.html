@@ -1,0 +1,229 @@
+
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { font-family: var(--font-sans); }
+  .dash { padding: 1.5rem 0; }
+  .topbar { display: flex; align-items: center; justify-content: space-between; margin-bottom: 1.5rem; }
+  .topbar-left { display: flex; align-items: center; gap: 12px; }
+  .logo { font-size: 13px; font-weight: 500; color: var(--color-text-primary); letter-spacing: 0.04em; }
+  .dot { width: 7px; height: 7px; border-radius: 50%; background: #1D9E75; display: inline-block; margin-right: 6px; }
+  .dot.dead { background: #888780; }
+  .status { font-size: 12px; color: var(--color-text-secondary); }
+  .ts { font-size: 12px; color: var(--color-text-tertiary); }
+
+  .metric-grid { display: grid; grid-template-columns: repeat(4, minmax(0,1fr)); gap: 10px; margin-bottom: 1.25rem; }
+  .metric { background: var(--color-background-secondary); border-radius: var(--border-radius-md); padding: 0.85rem 1rem; }
+  .metric-label { font-size: 11px; color: var(--color-text-secondary); margin-bottom: 6px; text-transform: uppercase; letter-spacing: 0.06em; }
+  .metric-value { font-size: 22px; font-weight: 500; color: var(--color-text-primary); line-height: 1; }
+  .metric-unit { font-size: 12px; color: var(--color-text-tertiary); margin-top: 4px; }
+  .metric-delta { font-size: 11px; margin-top: 5px; }
+  .up { color: #1D9E75; }
+  .down { color: #D85A30; }
+
+  .chart-grid { display: grid; grid-template-columns: minmax(0,1.6fr) minmax(0,1fr); gap: 10px; margin-bottom: 10px; }
+  .chart-grid-2 { display: grid; grid-template-columns: repeat(3, minmax(0,1fr)); gap: 10px; margin-bottom: 10px; }
+  .panel { background: var(--color-background-primary); border: 0.5px solid var(--color-border-tertiary); border-radius: var(--border-radius-lg); padding: 1rem 1.25rem; }
+  .panel-title { font-size: 11px; color: var(--color-text-secondary); text-transform: uppercase; letter-spacing: 0.06em; margin-bottom: 1rem; }
+
+  .core-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 8px; margin-top: 4px; }
+  .core-bar-wrap { display: flex; flex-direction: column; gap: 4px; }
+  .core-label { font-size: 10px; color: var(--color-text-tertiary); }
+  .core-track { height: 6px; border-radius: 3px; background: var(--color-background-secondary); overflow: hidden; }
+  .core-fill { height: 100%; border-radius: 3px; background: #378ADD; transition: width 0.6s ease; }
+
+  .pending-row { display: flex; align-items: center; justify-content: space-between; padding: 7px 0; border-bottom: 0.5px solid var(--color-border-tertiary); }
+  .pending-row:last-child { border-bottom: none; }
+  .pending-key { font-size: 12px; color: var(--color-text-secondary); }
+  .pending-val { font-size: 13px; font-weight: 500; color: var(--color-text-primary); }
+
+  .ram-track { height: 8px; border-radius: 4px; background: var(--color-background-secondary); overflow: hidden; margin-top: 8px; }
+  .ram-fill { height: 100%; border-radius: 4px; background: #534AB7; transition: width 0.6s ease; }
+  .ram-labels { display: flex; justify-content: space-between; margin-top: 5px; }
+  .ram-label { font-size: 11px; color: var(--color-text-tertiary); }
+</style>
+
+<div class="dash">
+  <div class="topbar">
+    <div class="topbar-left">
+      <span class="logo">TYCHE ENGINE</span>
+      <span class="status"><span class="dot" id="dot"></span><span id="conn-status">connecting</span></span>
+    </div>
+    <span class="ts" id="ts">—</span>
+  </div>
+
+  <div class="metric-grid">
+    <div class="metric">
+      <div class="metric-label">Functions/sec</div>
+      <div class="metric-value" id="m-fps">—</div>
+      <div class="metric-delta" id="d-fps"></div>
+    </div>
+    <div class="metric">
+      <div class="metric-label">Throughput</div>
+      <div class="metric-value" id="m-tp">—</div>
+      <div class="metric-unit">stocks/s</div>
+    </div>
+    <div class="metric">
+      <div class="metric-label">Dropped</div>
+      <div class="metric-value" id="m-dr">—</div>
+      <div class="metric-delta" id="d-dr"></div>
+    </div>
+    <div class="metric">
+      <div class="metric-label">RAM usage</div>
+      <div class="metric-value" id="m-ram">—</div>
+      <div class="metric-unit">MB</div>
+    </div>
+  </div>
+
+  <div class="chart-grid">
+    <div class="panel">
+      <div class="panel-title">Functions/sec &amp; Throughput</div>
+      <div style="position:relative;height:180px;"><canvas id="lineChart"></canvas></div>
+    </div>
+    <div class="panel">
+      <div class="panel-title">Core load</div>
+      <div class="core-grid" id="cores"></div>
+    </div>
+  </div>
+
+  <div class="chart-grid-2">
+    <div class="panel">
+      <div class="panel-title">Dropped stocks</div>
+      <div style="position:relative;height:120px;"><canvas id="dropChart"></canvas></div>
+    </div>
+    <div class="panel">
+      <div class="panel-title">Queue</div>
+      <div class="pending-row"><span class="pending-key">Pending</span><span class="pending-val" id="p-pend">—</span></div>
+      <div class="pending-row"><span class="pending-key">Scheduled</span><span class="pending-val" id="p-sched">—</span></div>
+      <div class="pending-row"><span class="pending-key">Loaded fns</span><span class="pending-val" id="p-loaded">—</span></div>
+    </div>
+    <div class="panel">
+      <div class="panel-title">Memory pressure</div>
+      <div style="display:flex;justify-content:space-between;align-items:baseline;margin-top:4px;">
+        <span style="font-size:20px;font-weight:500;color:var(--color-text-primary);" id="ram-pct">—</span>
+        <span style="font-size:11px;color:var(--color-text-tertiary);">of 2048 MB</span>
+      </div>
+      <div class="ram-track"><div class="ram-fill" id="ram-fill" style="width:0%"></div></div>
+      <div class="ram-labels"><span class="ram-label">0</span><span class="ram-label">512</span><span class="ram-label">1024</span><span class="ram-label">2048</span></div>
+    </div>
+  </div>
+</div>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.js"></script>
+<script>
+const MAX_POINTS = 30;
+const labels = Array(MAX_POINTS).fill('');
+const fpsData = Array(MAX_POINTS).fill(null);
+const tpData  = Array(MAX_POINTS).fill(null);
+const dropData = Array(MAX_POINTS).fill(null);
+
+let prevFps = null, prevDrop = null;
+
+const lineChart = new Chart(document.getElementById('lineChart'), {
+  data: {
+    labels,
+    datasets: [
+      { type:'line', label:'FPS', data: fpsData, borderColor:'#378ADD', backgroundColor:'transparent', borderWidth:1.5, pointRadius:0, tension:0.4, yAxisID:'y' },
+      { type:'line', label:'Throughput', data: tpData, borderColor:'#1D9E75', backgroundColor:'transparent', borderWidth:1.5, pointRadius:0, tension:0.4, yAxisID:'y2' }
+    ]
+  },
+  options: {
+    responsive:true, maintainAspectRatio:false, animation:{ duration:400 },
+    interaction:{ mode:'index', intersect:false },
+    plugins:{ legend:{ display:false }, tooltip:{ callbacks:{ title:()=>'' } } },
+    scales:{
+      x:{ display:false },
+      y:{ position:'left', grid:{ color:'rgba(128,128,128,0.08)' }, ticks:{ font:{size:10}, color:'#888' }, title:{ display:true, text:'fn/s', font:{size:10}, color:'#888' } },
+      y2:{ position:'right', grid:{ drawOnChartArea:false }, ticks:{ font:{size:10}, color:'#888' }, title:{ display:true, text:'stk/s', font:{size:10}, color:'#888' } }
+    }
+  }
+});
+
+const dropChart = new Chart(document.getElementById('dropChart'), {
+  data: { labels, datasets: [{ type:'bar', label:'Dropped', data: dropData, backgroundColor:'#D85A30', borderRadius:2, barPercentage:0.6 }] },
+  options: {
+    responsive:true, maintainAspectRatio:false, animation:{ duration:300 },
+    plugins:{ legend:{ display:false }, tooltip:{ callbacks:{ title:()=>'' } } },
+    scales:{
+      x:{ display:false },
+      y:{ grid:{ color:'rgba(128,128,128,0.08)' }, ticks:{ font:{size:10}, color:'#888' }, beginAtZero:true }
+    }
+  }
+});
+
+function buildCores(count) {
+  const el = document.getElementById('cores');
+  el.innerHTML = '';
+  for (let i = 0; i < count; i++) {
+    el.innerHTML += `<div class="core-bar-wrap">
+      <span class="core-label">C${i}</span>
+      <div class="core-track"><div class="core-fill" id="core-${i}" style="width:0%"></div></div>
+      <span class="core-label" id="core-lbl-${i}">0</span>
+    </div>`;
+  }
+}
+
+function push(arr, val) { arr.shift(); arr.push(val); }
+
+function delta(val, prev) {
+  if (prev === null) return '';
+  const d = val - prev;
+  if (d === 0) return '';
+  return `<span class="${d > 0 ? 'up' : 'down'}">${d > 0 ? '+' : ''}${d}</span>`;
+}
+
+function update(data) {
+  const now = new Date();
+  document.getElementById('ts').textContent = now.toLocaleTimeString();
+  document.getElementById('conn-status').textContent = 'live';
+  document.getElementById('dot').classList.remove('dead');
+
+  document.getElementById('m-fps').textContent = data.FunctionsRanPS;
+  document.getElementById('m-tp').textContent  = data.ThroughputOfStocks;
+  document.getElementById('m-dr').textContent  = data.DroppedStocks;
+  document.getElementById('m-ram').textContent = data.ProcessRAMUsage;
+
+  document.getElementById('d-fps').innerHTML  = delta(data.FunctionsRanPS, prevFps);
+  document.getElementById('d-dr').innerHTML   = delta(data.DroppedStocks, prevDrop);
+
+  document.getElementById('p-pend').textContent   = data.PendingFunctions;
+  document.getElementById('p-sched').textContent  = data.ScheduledFunctions;
+  document.getElementById('p-loaded').textContent = data.LoadedFuncs;
+
+  const ramPct = Math.round((data.ProcessRAMUsage / 2048) * 100);
+  document.getElementById('ram-pct').textContent = ramPct + '%';
+  document.getElementById('ram-fill').style.width = ramPct + '%';
+
+  if (document.getElementById('core-0') === null) buildCores(data.CoreCount);
+  data.CoreStatus.forEach((v, i) => {
+    const el = document.getElementById(`core-${i}`);
+    const lb = document.getElementById(`core-lbl-${i}`);
+    if (el) { el.style.width = Math.min(v, 100) + '%'; el.style.background = v > 70 ? '#D85A30' : v > 40 ? '#BA7517' : '#378ADD'; }
+    if (lb) lb.textContent = v;
+  });
+
+  push(fpsData, data.FunctionsRanPS);
+  push(tpData,  data.ThroughputOfStocks);
+  push(dropData, data.DroppedStocks);
+  lineChart.update('none');
+  dropChart.update('none');
+
+  prevFps  = data.FunctionsRanPS;
+  prevDrop = data.DroppedStocks;
+}
+
+async function tick() {
+  try {
+    const r = await fetch('http://localhost:8082');
+    if (!r.ok) throw new Error();
+    const d = await r.json();
+    update(d);
+  } catch {
+    document.getElementById('conn-status').textContent = 'offline';
+    document.getElementById('dot').classList.add('dead');
+  }
+}
+
+buildCores(8);
+tick();
+setInterval(tick, 1000);
+</script>
