@@ -6,7 +6,6 @@ import java.util.HashMap;
 import java.util.PriorityQueue;
 import java.util.concurrent.locks.ReentrantLock;
 
-import org.Tyche.Config;
 import org.Tyche.src.entity.Scheduler_Entity.PriorityBlock;
 import org.Tyche.src.entity.Scheduler_Entity.PriorityMapVal;
 

@@ -11,6 +11,7 @@ import java.util.function.Consumer;
 
 import org.Tyche.src.entity.CandleSize;
 import org.Tyche.src.entity.TimedTask;
+import org.Tyche.src.entity.Blocks.Candle;
 import org.Tyche.src.entity.Scheduler_Entity.PriorityBlock;
 import org.Tyche.src.entity.StrategyEntity.StartParams;
 import org.Tyche.src.util.Sleeper;
@@ -91,7 +92,8 @@ public class LoadBalancer {
             return;
 
         this.TimerStarted.add(name);
-        var sizes = Arrays.asList(CandleSize.sec5);
+        var sizes = Arrays.asList(CandleSize.sec5, CandleSize.sec30, CandleSize.min1, CandleSize.min15,
+                CandleSize.hour1);
         for (var size : sizes) {
             var task = new TimedTask(new PriorityBlock(size, name));
             this.time_queue.add(task);

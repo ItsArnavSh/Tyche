@@ -8,7 +8,7 @@ import org.Tyche.src.entity.Blocks.Candle;
 
 public class TargetStocks {
         public static final List<String> stocks = new ArrayList<>(List.of(
-                        "BSE", "ITC"));
+                        "BSE", "ITC", "RBS"));
 
         public static final List<CandleSize> sizes = new ArrayList<>(
                         List.of(CandleSize.sec5, CandleSize.sec30, CandleSize.min1, CandleSize.min15,

@@ -9,8 +9,8 @@ import org.Tyche.src.entity.Scheduler_Entity.PriorityBlock;
 
 //Thread safe cache
 public class Cache {
-    HashMap<String, Double> var_cache;
-    HashMap<PriorityBlock, ArrayDeque<Candle>> candle_cache;
+    public HashMap<String, Double> var_cache;
+    public HashMap<PriorityBlock, ArrayDeque<Candle>> candle_cache;
     ReentrantLock candle_lock, var_lock;
 
     public Cache() {

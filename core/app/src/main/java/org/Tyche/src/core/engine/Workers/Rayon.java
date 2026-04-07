@@ -1,8 +1,5 @@
 package org.Tyche.src.core.engine.Workers;
 
-import static io.grpc.MethodDescriptor.newBuilder;
-
-import java.io.ObjectInputFilter.Config;
 import java.util.ArrayList;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
@@ -35,80 +32,98 @@ public class Rayon {
       this.stock_handler = sh;
       this.scheduler = sch;
       this.repo = repo;
+      this.r = new StartParams(repo, null);
    }
 
    public void BootThreads() {
-
-      this.cores = org.Tyche.Config.SIMULATION_MODE ? 4 : Runtime.getRuntime().availableProcessors();
+      this.cores = Runtime.getRuntime().availableProcessors();
       this.executor = Executors.newFixedThreadPool(cores);
       System.out.print(cores);
+
+      // Add this globally
+      Thread.setDefaultUncaughtExceptionHandler((thread, throwable) -> {
+         System.err.println("Thread " + thread.getName() + " crashed!");
+         throwable.printStackTrace();
+      });
+
       for (int i = 0; i < cores; i++) {
          var worker_id = i;
          Runnable process = () -> {
-            // this.logger.info("Core Spawned");
-            ThreadTask(worker_id);
+            try {
+               ThreadTask(worker_id);
+            } catch (Throwable t) {
+               System.err.println("Worker " + worker_id + " died with: " + t.getMessage());
+               t.printStackTrace();
+            }
          };
          executor.submit(process);
       }
    }
 
    private void ThreadTask(int worker_id) {
-      logger.debug("Worker " + worker_id + " is Booting");
+      try {
+         logger.debug("Worker " + worker_id + " is Booting");
 
-      if (org.Tyche.Config.SIMULATION_MODE) {
-         try {
-            Thread.sleep(2000);
-         } catch (Exception e) {
-         }
-         logger.debug("Worker " + worker_id + " is Booted");
-      }
-      for (;;) {
-
-         // logger.info("Asking for a job");
-         var jobs = this.scheduler.give_jobs();
-         if (jobs.length == 0) {
-
-            // logger.debug("No Jobs available");
+         if (org.Tyche.Config.SIMULATION_MODE) {
             try {
-               Thread.sleep(5000);
+               Thread.sleep(2000);
             } catch (Exception e) {
             }
+            logger.debug("Worker " + worker_id + " is Booted");
          }
-         for (var job : jobs) {
-            if (job.equals(null)) {
+         for (;;) {
+
+            // logger.info("Asking for a job");
+            var jobs = this.scheduler.give_jobs();
+
+            if (jobs.length == 0) {
+               // logger.debug("No Jobs available");
                try {
-                  // logger.debug("No Jobs available");
                   Thread.sleep(5000);
                } catch (Exception e) {
                }
-               continue;
             }
-            // this.logger.debug("Task assigned: " + job.name);
-            var is_boot = this.stock_handler.boot_check(job);
-
-            // this.logger.debug("Boot check: " + is_boot);
-            var funcs = this.load_balancer.give_funcs(job, is_boot);
-            if (funcs == null || funcs.size() == 0) {
-               // System.out.println("No funcs");
-               try {
-                  // logger.debug("No Jobs available");
-                  Thread.sleep(1000);
-               } catch (Exception e) {
+            for (var job : jobs) {
+               if (job.equals(null)) {
+                  try {
+                     // logger.debug("No Jobs available");
+                     Thread.sleep(5000);
+                  } catch (Exception e) {
+                  }
+                  continue;
                }
-               continue;
-            }
-            // this.logger.debug("Func size: " + funcs.size());
-            for (var func : funcs) {
-               System.out.println(
-                     "Running " + func.toString() + " On " + job.name + " " + job.size + " " + " Worker: " + worker_id);
-               func.accept(r);
-            }
+               // this.logger.debug("Task assigned: " + job.name);
+               var is_boot = this.stock_handler.boot_check(job);
 
-            logger.info("Marking as booted");
-            this.stock_handler.mark_booted(job);
+               // this.logger.debug("Boot check: " + is_boot);
+               var funcs = this.load_balancer.give_funcs(job, is_boot);
+               if (funcs == null || funcs.size() == 0) {
+                  // System.out.println("No funcs");
+                  try {
+                     // logger.debug("No Jobs available");
+                     Thread.sleep(1000);
+                  } catch (Exception e) {
+                  }
+                  continue;
+               }
+               // this.logger.debug("Func size: " + funcs.size());
+               for (var func : funcs) {
+                  System.out.println(
+                        "Running " + func.toString() + " On " + job.name + " " + job.size + " " + " Worker: "
+                              + worker_id);
+                  r.context = new Context(job);
+                  System.out.println("Was this safe?");
+                  func.accept(r);
+               }
 
-            logger.info("Task Done");
+               logger.info("Marking as booted");
+               this.stock_handler.mark_booted(job);
+
+               logger.info("Task Done");
+            }
          }
+      } catch (Exception e) {
+         System.out.println("The thread lowkey crashed " + e.getMessage());
       }
    }
 

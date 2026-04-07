@@ -6,6 +6,7 @@ import java.util.function.Consumer;
 
 import org.Tyche.Config;
 import org.Tyche.src.core.engine.Scheduler.Functions.F_Demo;
+import org.Tyche.src.core.engine.Scheduler.Functions.F_SMA;
 import org.Tyche.src.entity.CandleSize;
 import org.Tyche.src.entity.StrategyEntity.StartParams;
 
@@ -19,8 +20,10 @@ public class FunctionAlloter {
         // Todo: Insert the functions from here
         var size = CandleSize.sec5;
         F_Demo demo = new F_Demo();
-        register(size, demo::Boot, demo::Roll);
-        // Todo: Insert the functions from here
+        // register(size, demo::Boot, demo::Roll);
+        F_SMA sma = new F_SMA();
+        register(size, sma::Boot, sma::Roll);
+        // // Todo: Insert the functions from here
         size = CandleSize.sec30;
         demo = new F_Demo();
         register(size, demo::Boot, demo::Roll);

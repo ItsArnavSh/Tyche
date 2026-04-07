@@ -40,10 +40,10 @@ public class Server {
         logger.info("Booting Server");
         this.engine.BootThreads();
         logger.info("Server initialization completed");
-        if (Config.SIMULATION_MODE) {
-            this.stockapi.StockProcess();
-        } else {
-            GRPC.start();
-        }
+        // if (Config.SIMULATION_MODE) {
+        this.stockapi.StockProcess();
+        // } else {
+        // GRPC.start();
+        // }
     }
 }
