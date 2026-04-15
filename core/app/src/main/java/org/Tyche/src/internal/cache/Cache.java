@@ -32,6 +32,7 @@ public class Cache {
             if (list.size() > 100) {
                 list.pollLast();
             }
+
         } finally {
             this.candle_lock.unlock();
         }
@@ -43,6 +44,7 @@ public class Cache {
         this.candle_lock.lock();
         try {
             this.candle_cache.put(ticker, candles);
+
         } finally {
             this.candle_lock.unlock();
         }

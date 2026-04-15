@@ -35,6 +35,19 @@ public class Rayon {
       this.r = new StartParams(repo, null);
    }
 
+   public void Monitor() {
+      var core_count = cores;
+      ArrayList<Integer>[] core_status;
+
+      try {
+         for (;;) {
+
+            Thread.sleep(1);
+         }
+      } catch (Exception e) {
+      }
+   }
+
    public void BootThreads() {
       this.cores = Runtime.getRuntime().availableProcessors();
       this.executor = Executors.newFixedThreadPool(cores);
