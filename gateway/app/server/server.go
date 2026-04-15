@@ -7,7 +7,6 @@ import (
 	"gateway/app/core/monitor"
 	"gateway/app/interface/producer"
 	"gateway/app/internal/grpc"
-	messagebroker "gateway/app/internal/msgbroker"
 	"gateway/app/util/bucket"
 	"gateway/app/util/entity"
 	"gateway/app/util/transaction"
@@ -15,9 +14,9 @@ import (
 )
 
 type Server struct {
-	server_addr         []string
-	grpc                *grpc.GrpcClient
-	message_broker      *messagebroker.RedisQueue
+	server_addr []string
+	grpc        *grpc.GrpcClient
+	//message_broker      *messagebroker.RedisQueue
 	monitor             *monitor.TradeMonitor
 	decision            decision.DecisionLayer
 	transaction_handler transaction.TransactionHandler
@@ -38,14 +37,14 @@ func NewServer(ctx context.Context, addr []string) (*Server, error) {
 		return nil, fmt.Errorf("init grpc client: %w", err)
 	}
 	// message broker
-	if s.message_broker, err = messagebroker.NewRedisQueue(
-		"localhost:6379",
-		"",
-		0,
-		"signals",
-	); err != nil {
-		return nil, fmt.Errorf("init redis queue: %w", err)
-	}
+	// if s.message_broker, err = messagebroker.NewRedisQueue(
+	// 	"localhost:6379",
+	// 	"",
+	// 	0,
+	// 	"signals",
+	// ); err != nil {
+	// 	return nil, fmt.Errorf("init redis queue: %w", err)
+	// }
 	// producer
 	if s.producer, err = producer.NewProducer(); err != nil {
 		return nil, fmt.Errorf("init producer: %w", err)
@@ -86,10 +85,10 @@ func goSafe(name string, fn func()) {
 }
 
 func (s *Server) BootServer(ctx context.Context) error {
-	goSafe("message-broker", func() { s.message_broker.Poll(ctx, s.sigchan) })
+	//goSafe("message-broker", func() { s.message_broker.Poll(ctx, s.sigchan) })
 	goSafe("signal-poller", func() { s.decision.StartSignalPoller() })
 	goSafe("decision-making", func() { s.decision.StartDecisionMaking(ctx, 5) })
 	goSafe("monitor", func() { s.monitor.StartMonitor(ctx) })
 	goSafe("trade-interface", func() { s.Interface.IllDoTheTalking(ctx) })
-	return nil
+	select {}
 }

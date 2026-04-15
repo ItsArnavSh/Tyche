@@ -1,5 +1,5 @@
 syntax = "proto3";
-package stockrec;
+package stockrec.v1;
 
 import "google/protobuf/empty.proto";
 
@@ -38,7 +38,6 @@ enum CandleSize {
   MIN1 = 2;
   MIN15 = 3;
   HOUR1 = 4;
-  DAY1 = 5;
 }
 message Series {
   CandleSize size = 1;

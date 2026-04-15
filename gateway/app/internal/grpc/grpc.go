@@ -10,7 +10,7 @@ import (
 )
 
 var (
-	addrs = []string{":50051", ":50052"}
+	addrs = []string{":50051"}
 )
 
 // Todo: Get all this from config instead of hardcoded

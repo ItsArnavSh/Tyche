@@ -54,12 +54,6 @@ public class CoreAPI {
             return request;
         }
 
-        /**
-         * Convenience method with default parameters
-         */
-        public static BootRequest generateFakeData(String[] tickers, CandleSize[] candleSizes) {
-            return generateFakeData(tickers, candleSizes, 100, 100.0);
-        }
     }
 
     public static class RollRequest {
@@ -85,7 +79,7 @@ public class CoreAPI {
     }
 
     public static class Series {
-        public CandleSize size; // corrected to your enum type
+        public CandleSize size;
         public ArrayDeque<Candle> candles;
 
         public Series() {

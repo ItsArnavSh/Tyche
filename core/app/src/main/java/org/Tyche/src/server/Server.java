@@ -22,7 +22,7 @@ public class Server {
     Repository repo;
     Rayon engine;
     Producer prod;
-    StockInterface stockapi;
+    public StockInterface stockapi;
 
     private static final Logger logger = LoggerFactory.getLogger(Server.class);
 
@@ -40,10 +40,9 @@ public class Server {
         logger.info("Booting Server");
         this.engine.BootThreads();
         logger.info("Server initialization completed");
-        // if (Config.SIMULATION_MODE) {
-        this.stockapi.StockProcess();
-        // } else {
-        // GRPC.start();
-        // }
+        // this.stockapi.StockProcess();
+
+        GRPC.start(this);
+
     }
 }

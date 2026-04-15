@@ -33,12 +33,11 @@ message SendKillSignalRequest {
 message SendKillSignalResponse {}
 
 enum CandleSize {
-  CANDLE_SIZE_UNSPECIFIED = 0;
-  CANDLE_SIZE_SEC30 = 1;
-  CANDLE_SIZE_MIN1 = 2;
-  CANDLE_SIZE_MIN15 = 3;
-  CANDLE_SIZE_HOUR1 = 4;
-  CANDLE_SIZE_DAY1 = 5;
+  SEC5 = 0;
+  SEC30 = 1;
+  MIN1 = 2;
+  MIN15 = 3;
+  HOUR1 = 4;
 }
 
 message StockSeries {

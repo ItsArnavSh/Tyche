@@ -4,6 +4,7 @@ import (
 	"context"
 	"gateway/app/internal/grpc"
 	"gateway/app/util/entity"
+	"log"
 	"sync"
 	"time"
 )
@@ -28,9 +29,11 @@ func (t *TradeInterface) IllDoTheTalking(ctx context.Context) {
 
 	// Initial boot load
 	bootReq := t.prod.BootRequest(req)
-	t.client.SendBootRequest(ctx, bootReq)
-
-	ticker := time.NewTicker(1 * time.Second)
+	err := t.client.SendBootRequest(ctx, bootReq)
+	if err != nil {
+		log.Fatal(err)
+	}
+	ticker := time.NewTicker(5 * time.Second)
 	defer ticker.Stop()
 
 	for {
