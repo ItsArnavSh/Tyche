@@ -1,6 +1,11 @@
 package org.Tyche.src.core.engine.Scheduler.Functions;
 
 import org.Tyche.src.entity.StrategyEntity.StartParams;
+
+import java.time.Instant;
+
+import org.Tyche.src.entity.CandleSize;
+import org.Tyche.src.entity.Signal;
 import org.Tyche.src.entity.Blocks.Candle;
 
 public class F_SMA extends BaseFunction {
@@ -83,6 +88,7 @@ public class F_SMA extends BaseFunction {
 
             double result = (raw_sma * PERIOD + newest - oldest) / PERIOD;
             params.repo.cache.set_var("sma_" + PERIOD, result);
+            params.repo.redis.send_signal(new Signal(params.context.ticker.name, 90, CandleSize.min1, Instant.now()));
 
         } catch (NullPointerException e) {
             System.err.println("[F_SMA Roll] Null reference — " + e.getMessage());

@@ -3,6 +3,7 @@ package org.Tyche.src.entity;
 import java.util.Objects;
 
 public class Scheduler_Entity {
+
     public static class PriorityBlock implements Comparable<PriorityBlock> {
         public CandleSize size;
         public String name;

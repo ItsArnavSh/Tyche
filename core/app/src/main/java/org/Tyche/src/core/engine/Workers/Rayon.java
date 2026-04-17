@@ -36,7 +36,6 @@ public class Rayon {
    }
 
    public void Monitor() {
-      var core_count = cores;
       ArrayList<Integer>[] core_status;
 
       try {
@@ -51,6 +50,7 @@ public class Rayon {
    public void BootThreads() {
       this.cores = Runtime.getRuntime().availableProcessors();
       this.executor = Executors.newFixedThreadPool(cores);
+      repo.redis.set("monitor:cores_no", String.valueOf(cores));
       System.out.print(cores);
 
       // Add this globally

@@ -33,6 +33,9 @@ implementation("io.grpc:grpc-protobuf:1.68.1")
 implementation("io.grpc:grpc-netty-shaded:1.68.1")
     implementation("redis.clients:jedis:5.1.0")
     compileOnly("javax.annotation:javax.annotation-api:1.3.2") // needed by grpc stubs
+        implementation("com.fasterxml.jackson.core:jackson-databind:2.17.2")
+    implementation("com.fasterxml.jackson.datatype:jackson-datatype-jsr310:2.17.2")
+
 
 
 }

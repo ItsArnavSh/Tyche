@@ -27,13 +27,15 @@ public class Server {
     private static final Logger logger = LoggerFactory.getLogger(Server.class);
 
     public Server() {
-        this.lb = new LoadBalancer();
+        this.repo = new Repository();
+        this.lb = new LoadBalancer(repo);
+
         this.sch = new Scheduler(1);
         this.timer = new BotClock();
         this.sh = new StockHandler(timer);
-        this.repo = new Repository();
         this.engine = new Rayon(lb, sh, sch, repo);
         this.stockapi = new StockInterface(engine);
+
     }
 
     public void StartServer() throws Exception {

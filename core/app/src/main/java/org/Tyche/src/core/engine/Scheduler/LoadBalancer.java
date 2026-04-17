@@ -11,9 +11,9 @@ import java.util.function.Consumer;
 
 import org.Tyche.src.entity.CandleSize;
 import org.Tyche.src.entity.TimedTask;
-import org.Tyche.src.entity.Blocks.Candle;
 import org.Tyche.src.entity.Scheduler_Entity.PriorityBlock;
 import org.Tyche.src.entity.StrategyEntity.StartParams;
+import org.Tyche.src.internal.cache.Repository;
 import org.Tyche.src.util.Sleeper;
 
 public class LoadBalancer {
@@ -23,8 +23,10 @@ public class LoadBalancer {
     ReentrantLock lock;
     HashSet<String> TimerStarted;
     Sleeper sleeper;
+    Repository repo;
 
-    public LoadBalancer() {
+    public LoadBalancer(Repository repo) {
+        this.repo = repo;
         this.lock = new ReentrantLock();
         this.odin = new FunctionAlloter();
         this.sleeper = new Sleeper();
@@ -109,8 +111,6 @@ public class LoadBalancer {
 
                 lock.lock();
                 try {
-                    System.out
-                            .println("Task is ready to be run " + task.ticker.name + " " + task.ticker.size.toString());
                     add_to_dict(task.ticker.name, task.ticker.size);
                 } finally {
                     lock.unlock();
@@ -120,7 +120,7 @@ public class LoadBalancer {
                 add_to_queue(task.ticker);
 
                 System.out.println("Added to queue " + task.ticker.name + " " + task.ticker.size);
-
+                repo.redis.set("monitor:pending_functions", Integer.toString(this.time_queue.size()));
             } catch (InterruptedException e) {
                 Thread.currentThread().interrupt();
                 break;
