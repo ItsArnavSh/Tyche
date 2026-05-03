@@ -21,9 +21,10 @@ type Bucket struct {
 	Producer producer.Producer
 }
 
-func NewBucket() Bucket {
+func NewBucket(producer producer.Producer) Bucket {
 	return Bucket{
 		DecayMap: make(map[string]util.Set[entity.Signal]),
+		Producer: producer,
 	}
 }
 func (b *Bucket) GetConfidence(name string) (float64, error) {

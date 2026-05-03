@@ -2,6 +2,7 @@ package producer
 
 import (
 	"context"
+	"fmt"
 	"gateway/app/internal/grpc"
 	"gateway/app/util/entity"
 	"log"
@@ -24,7 +25,7 @@ func NewTradeInterface(client *grpc.GrpcClient, prod Producer) TradeInterface {
 }
 
 func (t *TradeInterface) IllDoTheTalking(ctx context.Context) {
-	req := BuildAllMonoCandles([]string{"ONGC", "BEL"})
+	req := BuildAllMonoCandles(MockTickers(100))
 	mu := &sync.Mutex{}
 
 	// Initial boot load
@@ -101,4 +102,11 @@ func removeCandles(all, rm []entity.MonoCandle) []entity.MonoCandle {
 		}
 	}
 	return out
+}
+func MockTickers(n int) []string {
+	tickers := make([]string, n)
+	for i := range tickers {
+		tickers[i] = fmt.Sprintf("A%d", i+1)
+	}
+	return tickers
 }

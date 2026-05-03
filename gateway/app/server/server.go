@@ -12,6 +12,8 @@ import (
 	"gateway/app/util/entity"
 	"gateway/app/util/transaction"
 	"log"
+	"runtime"
+	"time"
 )
 
 type Server struct {
@@ -30,7 +32,7 @@ type Server struct {
 func NewServer(ctx context.Context, addr []string) (*Server, error) {
 	s := &Server{
 		server_addr: addr,
-		bucket:      bucket.NewBucket(),
+		bucket:      bucket.Bucket{},
 	}
 	var err error
 	// gRPC client
@@ -48,6 +50,7 @@ func NewServer(ctx context.Context, addr []string) (*Server, error) {
 	if s.producer, err = producer.NewProducer(); err != nil {
 		return nil, fmt.Errorf("init producer: %w", err)
 	}
+	s.bucket = bucket.NewBucket(s.producer)
 	//Interface
 	s.Interface = producer.NewTradeInterface(s.grpc, s.producer)
 
@@ -70,16 +73,20 @@ func NewServer(ctx context.Context, addr []string) (*Server, error) {
 
 	return s, nil
 }
+
 func goSafe(name string, fn func()) {
 	go func() {
 		defer func() {
 			if r := recover(); r != nil {
-				log.Printf("[panic] %s crashed: %v", name, r)
+				buf := make([]byte, 4096)
+				n := runtime.Stack(buf, false)
+				log.Printf("[panic] %s crashed: %v\nStacktrace:\n%s", name, r, buf[:n])
 			}
 		}()
-		log.Printf("[start] %s", name)
+		log.Printf("[start] %s launched (goroutine %d)", name, runtime.NumGoroutine())
+		start := time.Now()
 		fn()
-		log.Printf("[stop] %s exited", name)
+		log.Printf("[stop] %s exited cleanly after %s", name, time.Since(start))
 	}()
 }
 

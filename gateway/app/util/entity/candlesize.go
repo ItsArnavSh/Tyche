@@ -1,6 +1,11 @@
 package entity
 
-import "time"
+import (
+	"encoding/json"
+	"fmt"
+	"strings"
+	"time"
+)
 
 const (
 	SEC5 CandleSize = iota
@@ -40,4 +45,26 @@ func (c CandleSize) GetExpiryDuration() time.Time {
 		return time.Now().Add(time.Hour)
 	}
 	return time.Now()
+}
+
+func (c *CandleSize) UnmarshalJSON(b []byte) error {
+	var s string
+	if err := json.Unmarshal(b, &s); err != nil {
+		return err
+	}
+	switch strings.ToLower(s) {
+	case "sec5":
+		*c = SEC5
+	case "sec30":
+		*c = SEC30
+	case "min1":
+		*c = MIN1
+	case "min15":
+		*c = MIN15
+	case "hour1":
+		*c = HOUR1
+	default:
+		return fmt.Errorf("unknown CandleSize: %s", s)
+	}
+	return nil
 }

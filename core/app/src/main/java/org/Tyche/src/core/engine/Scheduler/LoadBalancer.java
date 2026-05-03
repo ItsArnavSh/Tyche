@@ -61,7 +61,6 @@ public class LoadBalancer {
     }
 
     public void add_to_queue(PriorityBlock ticker) {
-        // System.out.println("Aaaah");
         var task = new TimedTask(ticker);
         this.lock.lock();
         try {
