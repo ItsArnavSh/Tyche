@@ -25,7 +25,7 @@ func NewTradeInterface(client *grpc.GrpcClient, prod Producer) TradeInterface {
 }
 
 func (t *TradeInterface) IllDoTheTalking(ctx context.Context) {
-	req := BuildAllMonoCandles(MockTickers(100))
+	req := BuildAllMonoCandles(MockTickers(1000))
 	mu := &sync.Mutex{}
 
 	// Initial boot load

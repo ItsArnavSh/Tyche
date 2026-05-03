@@ -28,6 +28,10 @@ func NewGrpcClient(servers []string) (*GrpcClient, error) {
 		target,
 		grpc.WithTransportCredentials(insecure.NewCredentials()),
 		grpc.WithDefaultServiceConfig(`{"loadBalancingPolicy":"round_robin"}`),
+		grpc.WithDefaultCallOptions(
+			grpc.MaxCallRecvMsgSize(1024*1024*50), // 50MB receive
+			grpc.MaxCallSendMsgSize(1024*1024*50), // 50MB send
+		),
 	)
 	if err != nil {
 		return nil, fmt.Errorf("failed to connect: %v", err)

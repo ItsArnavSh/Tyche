@@ -107,7 +107,6 @@ public class Rayon {
                }
                // this.logger.debug("Task assigned: " + job.name);
                var is_boot = this.stock_handler.boot_check(job);
-               System.out.println("Booted:  " + job.name + job.size.name() + is_boot);
                // this.logger.debug("Boot check: " + is_boot);
                var funcs = this.load_balancer.give_funcs(job, is_boot);
                if (funcs == null || funcs.size() == 0) {
@@ -130,11 +129,8 @@ public class Rayon {
 
                }
 
-               System.out.println("Marking as booted");
-
                this.stock_handler.mark_booted(job);
-               is_boot = this.stock_handler.boot_check(job);
-               System.out.println("Booted afer check: " + is_boot);
+
                logger.info("Task Done");
             }
          }

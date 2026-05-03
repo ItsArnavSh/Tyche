@@ -27,6 +27,7 @@ public class GRPC {
         io.grpc.Server grpcServer = ServerBuilder
                 .forPort(50051)
                 .addService(new RustServiceImpl(server))
+                .maxInboundMessageSize(50 * 1024 * 1024)
                 .build()
                 .start();
         System.out.println("gRPC server started on port 50051");
