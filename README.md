@@ -11,16 +11,10 @@ For a detailed explanation of the architecture, design decisions, and implementa
 👉 [Let’s Go Gambling – Internal Working Explained](https://medium.com/@itsarnavsh/lets-go-gambling-2101c2a67dac)
 
 ## Usage
-Start the Java Workers
+(Docker needed)
 ```bash
-cd core
-gradle run
-```
-Start the Golang Client
-```bash
-cd gateway
-go get
-go run .
+docker compose up
+# WIP dashboard -> will be visible on localhost 
 ```
 ## Scope & Non-Goals
 
