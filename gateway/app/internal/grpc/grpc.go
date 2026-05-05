@@ -1,57 +1,59 @@
 package grpc
 
 import (
+	"context"
 	"fmt"
 	pb "gateway/proto"
+	"log"
+	"time"
 
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/credentials/insecure"
-	"google.golang.org/grpc/resolver"
 )
 
-var (
-	addrs = []string{":50051"}
-)
-
-// Todo: Get all this from config instead of hardcoded
 type GrpcClient struct {
-	conn   *grpc.ClientConn
 	client pb.RustServiceClient
+	conn   *grpc.ClientConn
 }
 
-func NewGrpcClient(servers []string) (*GrpcClient, error) {
-	// Build the target with multiple addresses
-	target := buildTarget(servers)
+func NewGrpcClient(addr string) (*GrpcClient, error) {
+	log.Printf("[grpc] connecting to %s...", addr)
 
-	// Set up connection with round robin
-	conn, err := grpc.NewClient(
-		target,
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+
+	conn, err := grpc.DialContext(
+		ctx,
+		addr,
 		grpc.WithTransportCredentials(insecure.NewCredentials()),
-		grpc.WithDefaultServiceConfig(`{"loadBalancingPolicy":"round_robin"}`),
+		grpc.WithBlock(), // 🔥 THIS is key
 		grpc.WithDefaultCallOptions(
-			grpc.MaxCallRecvMsgSize(1024*1024*50), // 50MB receive
-			grpc.MaxCallSendMsgSize(1024*1024*50), // 50MB send
+			grpc.MaxCallRecvMsgSize(1024*1024*50),
+			grpc.MaxCallSendMsgSize(1024*1024*50),
 		),
 	)
 	if err != nil {
-		return nil, fmt.Errorf("failed to connect: %v", err)
+		return nil, fmt.Errorf("failed to connect to gRPC server: %w", err)
 	}
 
+	log.Printf("[grpc] connected to %s", addr)
+
 	return &GrpcClient{
-		conn:   conn,
 		client: pb.NewRustServiceClient(conn),
+		conn:   conn,
 	}, nil
 }
-func buildTarget(servers []string) string {
-	// Register a manual resolver
-	resolver.Register(&manualResolverBuilder{
-		scheme:  "multi",
-		servers: servers,
-	})
-
-	return "multi:///servers"
+func (g *GrpcClient) Client() pb.RustServiceClient {
+	return g.client
 }
 
-func (c *GrpcClient) Close() error {
-	return c.conn.Close()
+func (g *GrpcClient) Close() error {
+	return g.conn.Close()
+}
+
+func min(a, b time.Duration) time.Duration {
+	if a < b {
+		return a
+	}
+	return b
 }

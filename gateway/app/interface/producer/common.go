@@ -25,14 +25,14 @@ func NewTradeInterface(client *grpc.GrpcClient, prod Producer) TradeInterface {
 }
 
 func (t *TradeInterface) IllDoTheTalking(ctx context.Context) {
-	req := BuildAllMonoCandles(MockTickers(1000))
+	req := BuildAllMonoCandles(MockTickers(10))
 	mu := &sync.Mutex{}
 
 	// Initial boot load
 	bootReq := t.prod.BootRequest(req)
 	err := t.client.SendBootRequest(ctx, bootReq)
 	if err != nil {
-		log.Fatal(err)
+		log.Println(err)
 	}
 	ticker := time.NewTicker(5 * time.Second)
 	defer ticker.Stop()

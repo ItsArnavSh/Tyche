@@ -2,6 +2,7 @@ package grpc
 
 import (
 	"context"
+	"fmt"
 	"gateway/app/util/entity"
 	pb "gateway/proto"
 )
@@ -14,6 +15,7 @@ func (g *GrpcClient) SendBootRequest(ctx context.Context, histories []entity.Tic
 		Hist: convertTickerHistoriesToProto(histories),
 	}
 	_, err := g.client.SendBootSignal(ctx, param)
+	fmt.Printf("Error: %v", err)
 	return err
 }
 

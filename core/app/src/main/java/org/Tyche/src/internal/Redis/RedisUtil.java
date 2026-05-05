@@ -11,7 +11,7 @@ import java.util.stream.Collectors;
 public class RedisUtil {
 
     private static final JedisPool pool = new JedisPool(
-            buildPoolConfig(), "localhost", 6379);
+            buildPoolConfig(), "redis", 6379);
 
     private static JedisPoolConfig buildPoolConfig() {
         JedisPoolConfig config = new JedisPoolConfig();

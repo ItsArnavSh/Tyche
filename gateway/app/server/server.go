@@ -36,11 +36,11 @@ func NewServer(ctx context.Context, addr []string) (*Server, error) {
 	}
 	var err error
 	// gRPC client
-	if s.grpc, err = grpc.NewGrpcClient(addr); err != nil {
+	if s.grpc, err = grpc.NewGrpcClient("core:50051"); err != nil {
 		return nil, fmt.Errorf("init grpc client: %w", err)
 	}
 	if s.message_broker, err = messagebroker.NewRedisQueue(
-		"localhost:6379",
+		"redis:6379",
 		"",
 		0,
 		"signal",

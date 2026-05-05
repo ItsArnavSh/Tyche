@@ -17,6 +17,6 @@ func main() {
 	}
 	err = server.BootServer(ctx)
 	if err != nil {
-		log.Fatal(err)
+		log.Println(err)
 	}
 }

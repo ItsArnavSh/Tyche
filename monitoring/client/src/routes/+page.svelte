@@ -80,7 +80,7 @@
 
 	async function tick() {
 		try {
-			const r = await fetch('http://localhost:8082');
+			const r = await fetch('http://monitoring-core:8082');
 			if (!r.ok) throw new Error();
 			prev = data;
 			data = (await r.json()) as Data;
