@@ -1,51 +1,48 @@
 package org.Tyche.src.core.engine.Scheduler.Functions;
 
-import java.time.Instant;
-import org.Tyche.src.entity.Blocks.Candle;
-import org.Tyche.src.entity.CandleSize;
-import org.Tyche.src.entity.Signal;
-import org.Tyche.src.entity.StrategyEntity.StartParams;
+import java.util.List;
 
+import org.Tyche.src.entity.Blocks.Candle;
+import org.Tyche.src.entity.StrategyEntity.StartParams;
+import org.Tyche.src.util.Indicators;
+
+/** Rolling VWAP reclaim. */
 public class F_VWAP extends BaseFunction {
+    private static final int PERIOD = 50;
 
     @Override
     public void Boot(StartParams params) {
-        System.out.println("[F_VWAP Boot] Initialized");
+        evaluate(params);
     }
 
     @Override
     public void Roll(StartParams params) {
-        try {
-            var candles = params.repo.cache.candle_cache.get(params.context.ticker);
-            if (candles == null || candles.size() < 50)
-                return; // at least one trading session
+        evaluate(params);
+    }
 
-            var arr = candles.toArray();
-            double cumulativeTPV = 0; // Typical Price * Volume
-            double cumulativeVolume = 0;
-
-            int limit = Math.min(390, arr.length); // approx one day of 1min candles
-
-            for (int i = 0; i < limit; i++) {
-                Candle c = (Candle) arr[i];
-                double typicalPrice = (c.high + c.low + c.close) / 3.0;
-                cumulativeTPV += typicalPrice * c.volume;
-                cumulativeVolume += c.volume;
-            }
-
-            if (cumulativeVolume == 0)
-                return;
-
-            double vwap = cumulativeTPV / cumulativeVolume;
-            double price = ((Candle) arr[0]).close;
-
-            if (price > vwap) {
-                System.out.println("[F_VWAP] Price above VWAP — bullish bias, sending buy");
-                Signal sig = new Signal(params.context.ticker.name, 70, CandleSize.min1, Instant.now());
-                params.repo.redis.send_signal(sig);
-            }
-        } catch (Exception e) {
-            e.printStackTrace();
+    private void evaluate(StartParams params) {
+        List<Candle> candles = candles(params);
+        if (candles.size() < PERIOD + 1) {
+            return;
+        }
+        double[] highs = Indicators.highs(candles);
+        double[] lows = Indicators.lows(candles);
+        double[] closes = Indicators.closes(candles);
+        double[] volumes = Indicators.volumes(candles);
+        double currentVwap = Indicators.vwap(highs, lows, closes, volumes, PERIOD);
+        double previousVwap = Indicators.vwap(
+                java.util.Arrays.copyOf(highs, highs.length - 1),
+                java.util.Arrays.copyOf(lows, lows.length - 1),
+                java.util.Arrays.copyOf(closes, closes.length - 1),
+                java.util.Arrays.copyOf(volumes, volumes.length - 1),
+                PERIOD);
+        if (Double.isNaN(currentVwap) || Double.isNaN(previousVwap)) {
+            return;
+        }
+        int n = closes.length;
+        params.repo.cache.set_var(params.context.ticker, "vwap", currentVwap);
+        if (closes[n - 2] <= previousVwap && closes[n - 1] > currentVwap) {
+            emit(params, 0.68, String.format("price reclaimed VWAP %.2f", currentVwap));
         }
     }
 }

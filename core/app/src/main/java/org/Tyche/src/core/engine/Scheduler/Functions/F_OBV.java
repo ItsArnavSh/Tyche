@@ -1,48 +1,45 @@
 package org.Tyche.src.core.engine.Scheduler.Functions;
 
-import java.time.Instant;
-import org.Tyche.src.entity.Blocks.Candle;
-import org.Tyche.src.entity.CandleSize;
-import org.Tyche.src.entity.Signal;
-import org.Tyche.src.entity.StrategyEntity.StartParams;
+import java.util.List;
 
+import org.Tyche.src.entity.Blocks.Candle;
+import org.Tyche.src.entity.StrategyEntity.StartParams;
+import org.Tyche.src.util.Indicators;
+
+/** On-balance-volume confirming a price breakout. */
 public class F_OBV extends BaseFunction {
+    private static final int BREAKOUT_LOOKBACK = 10;
+    private static final int TREND_PERIOD = 20;
 
     @Override
     public void Boot(StartParams params) {
-        params.repo.cache.set_var("obv", 0.0);
-        System.out.println("[F_OBV Boot] Initialized");
+        evaluate(params);
     }
 
     @Override
     public void Roll(StartParams params) {
-        try {
-            var candles = params.repo.cache.candle_cache.get(params.context.ticker);
-            if (candles == null || candles.size() < 3)
-                return;
+        evaluate(params);
+    }
 
-            var arr = candles.toArray();
-            Candle curr = (Candle) arr[0];
-            Candle prev = (Candle) arr[1];
+    private void evaluate(StartParams params) {
+        List<Candle> candles = candles(params);
+        if (candles.size() < TREND_PERIOD + BREAKOUT_LOOKBACK + 1) {
+            return;
+        }
+        double[] closes = Indicators.closes(candles);
+        double[] volumes = Indicators.volumes(candles);
+        double[] obv = Indicators.obvSeries(closes, volumes);
+        int n = closes.length;
+        double priceSma = Indicators.sma(closes, TREND_PERIOD);
 
-            double prevOBV = params.repo.cache.var_cache.getOrDefault("obv", 0.0);
-            double newOBV = prevOBV;
-
-            if (curr.close > prev.close) {
-                newOBV += curr.volume;
-            } else if (curr.close < prev.close) {
-                newOBV -= curr.volume;
-            }
-
-            params.repo.cache.set_var("obv", newOBV);
-
-            if (curr.close > prev.close && newOBV > prevOBV) {
-                System.out.println("[F_OBV] OBV rising with price — buy signal");
-                Signal sig = new Signal(params.context.ticker.name, 72, CandleSize.min1, Instant.now());
-                params.repo.redis.send_signal(sig);
-            }
-        } catch (Exception e) {
-            e.printStackTrace();
+        double priorObvHigh = Double.NEGATIVE_INFINITY;
+        for (int i = n - BREAKOUT_LOOKBACK - 1; i < n - 1; i++) {
+            priorObvHigh = Math.max(priorObvHigh, obv[i]);
+        }
+        params.repo.cache.set_var(params.context.ticker, "obv", obv[n - 1]);
+        if (closes[n - 1] > priceSma && obv[n - 1] > priorObvHigh) {
+            emit(params, 0.65, String.format("OBV %.0f made a %d-bar high with price above SMA%d",
+                    obv[n - 1], BREAKOUT_LOOKBACK, TREND_PERIOD));
         }
     }
 }

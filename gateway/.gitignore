@@ -1,2 +1,2 @@
 pbconnect
-proto/*.go
+/bin/

@@ -1,5 +1,6 @@
 import { readFileSync } from "node:fs";
 import { get } from "./redis.ts";
+import { coreLoad, drift, usedPercent } from "./utils.ts";
 
 export interface Data {
   LoadedFuncs: number;
@@ -20,8 +21,6 @@ let scheduled = 150;
 let coreLoads: number[] = [];
 let prevCoreStats: number[][] = [];
 
-console.log(await get("tyche:monitor:cores_no"));
-
 function getCoreStats(): number[][] {
   const lines = readFileSync("/proc/stat", "utf8").split("\n");
   return lines
@@ -35,13 +34,7 @@ function getRealCoreLoads(): number[] {
     prevCoreStats = curr;
     return curr.map(() => 0);
   }
-  const loads = curr.map((core, i) => {
-    const prev = prevCoreStats[i];
-    const idle = core[3] - prev[3];
-    const total =
-      core.reduce((a, b) => a + b, 0) - prev.reduce((a, b) => a + b, 0);
-    return total === 0 ? 0 : Math.round((1 - idle / total) * 100);
-  });
+  const loads = curr.map((core, i) => coreLoad(core, prevCoreStats[i]));
   prevCoreStats = curr;
   return loads;
 }
@@ -52,12 +45,7 @@ function getSystemRAMPercent(): number {
     Number(meminfo.match(new RegExp(`${key}:\\s+(\\d+)`))?.[1] ?? 0);
   const total = get("MemTotal");
   const available = get("MemAvailable");
-  return total === 0 ? 0 : Math.round((1 - available / total) * 100);
-}
-
-function drift(val: number, min: number, max: number, step: number): number {
-  const change = (Math.random() - 0.5) * step;
-  return Math.min(max, Math.max(min, val + change));
+  return usedPercent(total, available);
 }
 
 export async function generateMetrics(

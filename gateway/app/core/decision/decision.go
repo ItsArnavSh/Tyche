@@ -3,172 +3,269 @@ package decision
 import (
 	"context"
 	"fmt"
+	"log"
+	"sort"
+	"sync"
+	"time"
+
+	"gateway/app/config"
 	"gateway/app/core/monitor"
 	"gateway/app/util/bucket"
 	"gateway/app/util/entity"
 	"gateway/app/util/transaction"
-	"log"
-	"sort"
-	"time"
 )
 
+// DecisionLayer turns decaying signals into sized, risk-bounded paper orders.
+//
+// It is the only component allowed to create BUY instructions.  The monitor is
+// the only component allowed to create SELL instructions for open positions.
 type DecisionLayer struct {
-	transaction    transaction.TransactionHandler
-	bucket         bucket.Bucket
-	signal_channel <-chan entity.Signal
-	monitor        *monitor.TradeMonitor
+	transaction transaction.TransactionHandler
+	bucket      *bucket.Bucket
+	signalCh    <-chan entity.Signal
+	monitor     *monitor.TradeMonitor
+
+	settings config.DecisionSettings
+	interval time.Duration
+
+	mu      sync.Mutex
+	lastBuy map[string]time.Time
 }
 
-func NewDecisionLayer(th transaction.TransactionHandler, bucket bucket.Bucket, sig <-chan entity.Signal, monitor *monitor.TradeMonitor) DecisionLayer {
-	log.Printf("[DecisionLayer] Initializing — bucket=%+v monitor=%+v", bucket, monitor)
-	return DecisionLayer{
-		transaction:    th,
-		bucket:         bucket,
-		signal_channel: sig,
-		monitor:        monitor,
+// Options configures the layer.  Zero values fall back to environment-driven
+// defaults, which keeps construction convenient for production and tests.
+type Options struct {
+	Settings config.DecisionSettings
+	Interval time.Duration
+}
+
+func NewDecisionLayer(
+	th transaction.TransactionHandler,
+	b *bucket.Bucket,
+	sig <-chan entity.Signal,
+	mon *monitor.TradeMonitor,
+	options ...Options,
+) *DecisionLayer {
+	opts := Options{}
+	if len(options) > 0 {
+		opts = options[0]
+	}
+	if opts.Settings.MinConfidence == 0 {
+		opts.Settings = config.Load().Decision
+	}
+	if opts.Interval <= 0 {
+		opts.Interval = 5 * time.Second
+	}
+	return &DecisionLayer{
+		transaction: th,
+		bucket:      b,
+		signalCh:    sig,
+		monitor:     mon,
+		settings:    opts.Settings,
+		interval:    opts.Interval,
+		lastBuy:     make(map[string]time.Time),
 	}
 }
 
-func (d *DecisionLayer) StartSignalPoller() {
-	log.Println("[SignalPoller] Started — waiting for signals")
-	for signal := range d.signal_channel {
-		log.Printf("[SignalPoller] Received signal: %+v", signal)
-		d.bucket.SignalBucket(signal)
+// StartSignalPoller feeds incoming signals into the confidence bucket.
+func (d *DecisionLayer) StartSignalPoller(ctx context.Context) {
+	log.Println("[SignalPoller] started")
+	for {
+		select {
+		case <-ctx.Done():
+			log.Println("[SignalPoller] context cancelled — stopping")
+			return
+		case signal, ok := <-d.signalCh:
+			if !ok {
+				log.Println("[SignalPoller] signal channel closed — stopping")
+				return
+			}
+			d.bucket.SignalBucket(signal)
+		}
 	}
-	log.Println("[SignalPoller] Signal channel closed — exiting")
 }
 
-func (d *DecisionLayer) StartDecisionMaking(ctx context.Context, interval int) {
-	log.Println("[DecisionMaking] Started")
-	ticker := time.NewTicker(5 * time.Second)
+// StartDecisionMaking evaluates the bucket on a fixed cadence.
+func (d *DecisionLayer) StartDecisionMaking(ctx context.Context) {
+	log.Printf("[DecisionMaking] started (interval %s, minConfidence=%.2f, maxPositions=%d)",
+		d.interval, d.settings.MinConfidence, d.settings.MaxPositions)
+	ticker := time.NewTicker(d.interval)
 	defer ticker.Stop()
 	for {
 		select {
 		case <-ticker.C:
-			budget, err := d.transaction.GetBudget()
-			if err != nil {
-				log.Printf("[DecisionMaking] Failed to get budget: %v", err)
-				continue
-			}
-			log.Printf("[DecisionMaking] Tick — budget=%.2f", budget)
-
-			if d.bucket.Producer == nil {
-				log.Println("[DecisionMaking] bucket.Producer is nil — skipping tick")
-				continue
-			}
-
-			top_choices := d.bucket.GetTopNinBudget(5, budget)
-			log.Printf("[DecisionMaking] Top choices: %+v", top_choices)
-
-			if len(top_choices) == 0 {
-				log.Println("[DecisionMaking] No choices returned — DecayMap may be empty or nothing fits budget")
-				continue
-			}
-
-			instructions := d.considerChoices(top_choices)
-			log.Printf("[DecisionMaking] Instructions generated: %d", len(instructions))
-
-			if len(instructions) > 0 {
-				d.BeginTransaction(instructions)
-			}
-
+			d.tick()
 		case <-ctx.Done():
-			log.Println("[DecisionMaking] Context cancelled — stopping")
+			log.Println("[DecisionMaking] context cancelled — stopping")
 			return
 		}
 	}
 }
 
-func (d *DecisionLayer) considerChoices(choices []entity.SignalConf) []entity.TransactionInstruction {
-	log.Printf("[considerChoices] Evaluating %d choices", len(choices))
+func (d *DecisionLayer) tick() {
+	if d.bucket == nil || d.bucket.Producer == nil {
+		return
+	}
+	d.bucket.PruneExpired(time.Now())
 
 	budget, err := d.transaction.GetBudget()
 	if err != nil {
-		log.Printf("[considerChoices] Failed to get budget: %v", err)
-		return nil
+		log.Printf("[DecisionMaking] budget lookup failed: %v", err)
+		return
 	}
-	log.Printf("[considerChoices] Budget: %.2f", budget)
+	if budget <= 0 {
+		return
+	}
 
-	const (
-		minConfidence     = 0.70
-		maxPositions      = 5
-		budgetPerTrade    = 0.15
-		stopLossPercent   = 0.05
-		takeProfitPercent = 0.10
-		holdDuration      = 24 * time.Hour
-	)
+	availableSlots := d.settings.MaxPositions - d.monitor.ActivePositionCount()
+	if availableSlots <= 0 {
+		return
+	}
 
-	var qualified []entity.SignalConf
+	choices := d.bucket.GetTopNinBudget(availableSlots*3, budget)
+	if len(choices) == 0 {
+		return
+	}
+	instructions, err := d.considerChoices(choices, budget, availableSlots)
+	if err != nil {
+		log.Printf("[DecisionMaking] %v", err)
+		return
+	}
+	if len(instructions) > 0 {
+		d.BeginTransaction(instructions)
+	}
+}
+
+// considerChoices applies confidence, cooldown, position and cash constraints.
+// It is deterministic for a given bucket snapshot and is unit-tested directly.
+func (d *DecisionLayer) considerChoices(
+	choices []entity.SignalConf,
+	budget float64,
+	availableSlots int,
+) ([]entity.TransactionInstruction, error) {
+	if availableSlots <= 0 {
+		return nil, nil
+	}
+	qualified := make([]entity.SignalConf, 0, len(choices))
 	for _, choice := range choices {
-		if choice.ResultantConf >= minConfidence {
-			qualified = append(qualified, choice)
-		} else {
-			log.Printf("[considerChoices] Skipping %s — confidence %.2f below threshold %.2f", choice.Name, choice.ResultantConf, minConfidence)
+		if choice.ResultantConf < d.settings.MinConfidence {
+			continue
 		}
+		if d.monitor.HasPosition(choice.Name) || d.inCooldown(choice.Name, time.Now()) {
+			continue
+		}
+		qualified = append(qualified, choice)
 	}
-
 	if len(qualified) == 0 {
-		log.Println("[considerChoices] No qualified signals after confidence filter")
-		return nil
+		return nil, nil
 	}
-	log.Printf("[considerChoices] Qualified signals: %d", len(qualified))
-
 	sort.Slice(qualified, func(i, j int) bool {
+		if qualified[i].ResultantConf == qualified[j].ResultantConf {
+			return qualified[i].Name < qualified[j].Name
+		}
 		return qualified[i].ResultantConf > qualified[j].ResultantConf
 	})
+	if len(qualified) > availableSlots {
+		qualified = qualified[:availableSlots]
+	}
 
-	limit := min(len(qualified), maxPositions)
-	positionBudget := budget * budgetPerTrade
-	log.Printf("[considerChoices] Position budget per trade: %.2f", positionBudget)
+	maxFraction := d.settings.MaxPositionFraction
+	if maxFraction <= 0 || maxFraction > 1 {
+		maxFraction = 0.15
+	}
+	positionBudget := budget * maxFraction
+	stopLoss := d.settings.StopLossPercent
+	if stopLoss <= 0 || stopLoss >= 1 {
+		stopLoss = 0.05
+	}
+	takeProfit := d.settings.TakeProfitPercent
+	if takeProfit <= 0 {
+		takeProfit = 0.10
+	}
+	hold := d.settings.HoldDuration
+	if hold <= 0 {
+		hold = 24 * time.Hour
+	}
 
-	var instructions []entity.TransactionInstruction
-	for i := 0; i < limit; i++ {
-		signal := qualified[i]
-		log.Printf("[considerChoices] Processing signal: %+v", signal)
-
-		price := d.bucket.Producer.GetCurrentValue(signal.Name)
-		log.Printf("[considerChoices] Current price for %s: %.4f", signal.Name, price)
-
+	now := time.Now()
+	remainingCash := budget
+	instructions := make([]entity.TransactionInstruction, 0, len(qualified))
+	for _, choice := range qualified {
+		price := d.bucket.Producer.GetCurrentValue(choice.Name)
 		if price <= 0 {
-			log.Printf("[considerChoices] Skipping %s — invalid price %.4f", signal.Name, price)
 			continue
 		}
-
-		quantity := uint32(positionBudget / price)
+		alloc := positionBudget
+		if alloc > remainingCash {
+			alloc = remainingCash
+		}
+		quantity := uint32(alloc / price)
 		if quantity == 0 {
-			log.Printf("[considerChoices] Skipping %s — quantity rounds to 0 (budget=%.2f price=%.4f)", signal.Name, positionBudget, price)
 			continue
 		}
+		cost := float64(quantity) * price
+		if cost > remainingCash {
+			quantity = uint32(remainingCash / price)
+			if quantity == 0 {
+				continue
+			}
+			cost = float64(quantity) * price
+		}
 
-		maxVal := price * (1 + takeProfitPercent)
-		minValSell := price * (1 - stopLossPercent)
-		sellAfter := time.Now().Add(holdDuration)
-
-		log.Printf("[considerChoices] Instruction — ticker=%s qty=%d price=%.4f takeProfit=%.4f stopLoss=%.4f", signal.Name, quantity, price, maxVal, minValSell)
-
+		entryConfidence := choice.PeakConfidence
+		if entryConfidence <= 0 {
+			entryConfidence = choice.ResultantConf
+		}
 		instructions = append(instructions, entity.TransactionInstruction{
-			Ticker:     signal.Name,
+			Ticker:     choice.Name,
 			Action:     entity.BUY,
 			Quantity:   quantity,
 			Price:      price,
-			Confidence: signal.ResultantConf,
-			Reason:     fmt.Sprintf("High confidence: %.1f%%", signal.ResultantConf*100),
-			MaxVal:     maxVal,
-			SellAfter:  sellAfter,
-			MinValSell: minValSell,
+			Confidence: entryConfidence,
+			Reason:     fmt.Sprintf("aggregate confidence %.1f%%", choice.ResultantConf*100),
+			MaxVal:     price * (1 + takeProfit),
+			MinValSell: price * (1 - stopLoss),
+			SellAfter:  now.Add(hold),
 		})
+		remainingCash -= cost
+		if remainingCash <= 0 {
+			break
+		}
 	}
-
-	log.Printf("[considerChoices] Total instructions: %d", len(instructions))
-	return instructions
+	return instructions, nil
 }
 
-func (d *DecisionLayer) BeginTransaction(insts []entity.TransactionInstruction) {
-	log.Printf("[BeginTransaction] Processing %d instructions", len(insts))
-	for _, inst := range insts {
-		log.Printf("[BeginTransaction] Executing: %+v", inst)
-		d.transaction.Process(inst)
-		d.monitor.AddPosition(inst)
-		log.Printf("[BeginTransaction] Done: %s", inst.Ticker)
+func (d *DecisionLayer) inCooldown(ticker string, now time.Time) bool {
+	if d.settings.RebuyCooldown <= 0 {
+		return false
 	}
+	d.mu.Lock()
+	defer d.mu.Unlock()
+	last, ok := d.lastBuy[ticker]
+	return ok && now.Sub(last) < d.settings.RebuyCooldown
+}
+
+// BeginTransaction executes instructions in order and registers successful
+// buys with the monitor.  Returns the number of filled orders.
+func (d *DecisionLayer) BeginTransaction(insts []entity.TransactionInstruction) int {
+	filled := 0
+	for _, inst := range insts {
+		if err := d.transaction.Process(inst); err != nil {
+			log.Printf("[BeginTransaction] %s %s rejected: %v", inst.Action, inst.Ticker, err)
+			continue
+		}
+		if inst.Action == entity.BUY {
+			if !d.monitor.AddPosition(inst) {
+				log.Printf("[BeginTransaction] %s filled but not registered (duplicate position)", inst.Ticker)
+				continue
+			}
+			d.mu.Lock()
+			d.lastBuy[inst.Ticker] = time.Now()
+			d.mu.Unlock()
+			filled++
+			log.Printf("[BeginTransaction] BUY %s qty=%d @ %.4f conf=%.2f",
+				inst.Ticker, inst.Quantity, inst.Price, inst.Confidence)
+		}
+	}
+	return filled
 }

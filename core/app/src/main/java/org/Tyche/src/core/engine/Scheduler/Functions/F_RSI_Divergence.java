@@ -1,56 +1,65 @@
 package org.Tyche.src.core.engine.Scheduler.Functions;
 
-import java.time.Instant;
-import org.Tyche.src.entity.Blocks.Candle;
-import org.Tyche.src.entity.CandleSize;
-import org.Tyche.src.entity.Signal;
-import org.Tyche.src.entity.StrategyEntity.StartParams;
+import java.util.List;
 
+import org.Tyche.src.entity.Blocks.Candle;
+import org.Tyche.src.entity.StrategyEntity.StartParams;
+import org.Tyche.src.util.Indicators;
+
+/**
+ * Bullish RSI divergence: price makes a lower low while RSI makes a higher
+ * low.  The two swing lows must be at least three bars apart.
+ */
 public class F_RSI_Divergence extends BaseFunction {
-    private static final int PERIOD = 14;
+    private static final int RSI_PERIOD = 14;
+    private static final int LOOKBACK = 30;
 
     @Override
     public void Boot(StartParams params) {
-        System.out.println("[F_RSI_Divergence Boot] Ready");
+        evaluate(params);
     }
 
     @Override
     public void Roll(StartParams params) {
-        try {
-            var candles = params.repo.cache.candle_cache.get(params.context.ticker);
-            if (candles == null || candles.size() < PERIOD + 10)
-                return;
-
-            var arr = candles.toArray();
-
-            // Calculate current RSI
-            double rsi = calculateRSI(arr, PERIOD);
-
-            // Simple bullish divergence check (price lower low, RSI higher low)
-            if (rsi < 35) {
-                System.out.println("[F_RSI_Divergence] RSI Oversold (" + rsi + ") — potential reversal, buy signal");
-                Signal sig = new Signal(params.context.ticker.name, 78, CandleSize.min1, Instant.now());
-                params.repo.redis.send_signal(sig);
-            }
-        } catch (Exception e) {
-            e.printStackTrace();
-        }
+        evaluate(params);
     }
 
-    private double calculateRSI(Object[] arr, int period) {
-        double gain = 0, loss = 0;
-        for (int i = 1; i <= period; i++) {
-            double change = ((Candle) arr[i - 1]).close - ((Candle) arr[i]).close;
-            if (change > 0)
-                gain += change;
-            else
-                loss -= change;
+    private void evaluate(StartParams params) {
+        List<Candle> candles = candles(params);
+        if (candles.size() < LOOKBACK + RSI_PERIOD) {
+            return;
         }
-        double avgGain = gain / period;
-        double avgLoss = loss / period;
-        if (avgLoss == 0)
-            return 100;
-        double rs = avgGain / avgLoss;
-        return 100 - (100 / (1 + rs));
+        double[] closes = Indicators.closes(candles);
+        double[] rsi = Indicators.rsiSeries(closes, RSI_PERIOD);
+        int n = closes.length;
+
+        // Find the most recent swing low in the last LOOKBACK bars.
+        int recentStart = n - 1;
+        int priorStart = n - LOOKBACK;
+        int priorEnd = n - 6;
+        int recentLowIdx = recentStart;
+        for (int i = recentStart; i >= n - 5; i--) {
+            if (closes[i] < closes[recentLowIdx]) {
+                recentLowIdx = i;
+            }
+        }
+        int priorLowIdx = -1;
+        for (int i = priorStart; i <= priorEnd; i++) {
+            if (Double.isNaN(rsi[i]) || Double.isNaN(rsi[recentLowIdx])) {
+                continue;
+            }
+            if (priorLowIdx == -1 || closes[i] < closes[priorLowIdx]) {
+                priorLowIdx = i;
+            }
+        }
+        if (priorLowIdx == -1 || recentLowIdx - priorLowIdx < 3) {
+            return;
+        }
+        boolean lowerLow = closes[recentLowIdx] < closes[priorLowIdx];
+        boolean higherRsiLow = rsi[recentLowIdx] > rsi[priorLowIdx] + 2.0;
+        if (lowerLow && higherRsiLow && rsi[recentLowIdx] < 45) {
+            emit(params, 0.76, String.format("bullish RSI divergence (price %.2f < %.2f, RSI %.1f > %.1f)",
+                    closes[recentLowIdx], closes[priorLowIdx], rsi[recentLowIdx], rsi[priorLowIdx]));
+        }
     }
 }

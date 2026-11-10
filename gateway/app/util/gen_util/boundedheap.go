@@ -2,93 +2,88 @@ package genutil
 
 import (
 	"container/heap"
+	"sort"
+
 	"gateway/app/util/entity"
 )
 
-// MaxHeap implements heap.Interface for a max heap of SignalConf
-type MaxHeap []entity.SignalConf
+// signalMinHeap keeps the *smallest* signal at the root, which makes it cheap
+// to evict the weakest candidate when maintaining a top-N set.
+type signalMinHeap []entity.SignalConf
 
-func (h MaxHeap) Len() int           { return len(h) }
-func (h MaxHeap) Less(i, j int) bool { return h[i].ResultantConf > h[j].ResultantConf } // > for max heap
-func (h MaxHeap) Swap(i, j int)      { h[i], h[j] = h[j], h[i] }
+func (h signalMinHeap) Len() int           { return len(h) }
+func (h signalMinHeap) Less(i, j int) bool { return h[i].ResultantConf < h[j].ResultantConf }
+func (h signalMinHeap) Swap(i, j int)      { h[i], h[j] = h[j], h[i] }
 
-func (h *MaxHeap) Push(x any) {
+func (h *signalMinHeap) Push(x any) {
 	*h = append(*h, x.(entity.SignalConf))
 }
 
-func (h *MaxHeap) Pop() any {
+func (h *signalMinHeap) Pop() any {
 	old := *h
 	n := len(old)
-	x := old[n-1]
-	*h = old[0 : n-1]
-	return x
+	item := old[n-1]
+	*h = old[:n-1]
+	return item
 }
 
-// Peek returns the maximum element without removing it
-func (h MaxHeap) Peek() entity.SignalConf {
-	return h[0]
-}
-
-// BoundedMaxHeap is a max heap with a size limit to track N smallest elements
+// BoundedMaxHeap tracks the N highest-confidence signals.
 type BoundedMaxHeap struct {
-	heap    *MaxHeap
+	heap    *signalMinHeap
 	maxSize int
 }
 
-// NewBoundedMaxHeap creates a new bounded max heap with the specified max size
 func NewBoundedMaxHeap(maxSize int) *BoundedMaxHeap {
-	h := &MaxHeap{}
-	heap.Init(h)
-	return &BoundedMaxHeap{
-		heap:    h,
-		maxSize: maxSize,
+	if maxSize < 0 {
+		maxSize = 0
 	}
+	h := &signalMinHeap{}
+	heap.Init(h)
+	return &BoundedMaxHeap{heap: h, maxSize: maxSize}
 }
 
-// Push adds an element to the heap, maintaining the size constraint
 func (b *BoundedMaxHeap) Push(x entity.SignalConf) {
+	if b.maxSize == 0 {
+		return
+	}
 	if b.heap.Len() < b.maxSize {
-		// Heap not full yet, just add
 		heap.Push(b.heap, x)
-	} else if x.ResultantConf < b.heap.Peek().ResultantConf {
-		// New element is smaller than the largest (top of max heap)
-		// Replace the largest with the new smaller element
+		return
+	}
+	// Replace the weakest kept element when the candidate is stronger.
+	if x.ResultantConf > (*b.heap)[0].ResultantConf {
 		heap.Pop(b.heap)
 		heap.Push(b.heap, x)
 	}
-	// If x is larger than the largest in heap, ignore it
 }
 
-// Pop removes and returns the maximum element
 func (b *BoundedMaxHeap) Pop() entity.SignalConf {
 	return heap.Pop(b.heap).(entity.SignalConf)
 }
 
-// Peek returns the maximum element without removing it
 func (b *BoundedMaxHeap) Peek() entity.SignalConf {
-	return b.heap.Peek()
+	return (*b.heap)[0]
 }
 
-// Len returns the current size of the heap
 func (b *BoundedMaxHeap) Len() int {
 	return b.heap.Len()
 }
 
-// GetAll returns all elements in the heap (not in sorted order)
+// GetAll returns the retained candidates in unspecified order.
 func (b *BoundedMaxHeap) GetAll() []entity.SignalConf {
-	return *b.heap
+	out := make([]entity.SignalConf, len(*b.heap))
+	copy(out, *b.heap)
+	return out
 }
 
-// GetSorted returns all elements sorted from smallest to largest
+// GetSorted returns retained candidates from strongest to weakest.
 func (b *BoundedMaxHeap) GetSorted() []entity.SignalConf {
-	result := make([]entity.SignalConf, b.heap.Len())
-	// Pop all elements (they come out largest to smallest)
-	for i := len(result) - 1; i >= 0; i-- {
-		result[i] = heap.Pop(b.heap).(entity.SignalConf)
-	}
-	// Restore the heap
-	for _, val := range result {
-		heap.Push(b.heap, val)
-	}
-	return result
+	out := b.GetAll()
+	sort.Slice(out, func(i, j int) bool {
+		if out[i].ResultantConf == out[j].ResultantConf {
+			return out[i].Name < out[j].Name
+		}
+		return out[i].ResultantConf > out[j].ResultantConf
+	})
+	return out
 }

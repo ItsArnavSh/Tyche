@@ -1,50 +1,45 @@
 package org.Tyche.src.core.engine.Scheduler.Functions;
 
-import java.time.Instant;
-import org.Tyche.src.entity.Blocks.Candle;
-import org.Tyche.src.entity.CandleSize;
-import org.Tyche.src.entity.Signal;
-import org.Tyche.src.entity.StrategyEntity.StartParams;
+import java.util.List;
 
+import org.Tyche.src.entity.Blocks.Candle;
+import org.Tyche.src.entity.StrategyEntity.StartParams;
+import org.Tyche.src.util.Indicators;
+
+/** Volatility breakout: close advances more than 1.5 ATR in one bar. */
 public class F_ATR extends BaseFunction {
     private static final int PERIOD = 14;
+    private static final double MULTIPLIER = 1.5;
 
     @Override
     public void Boot(StartParams params) {
-        System.out.println("[F_ATR Boot] Initialized for " + params.context.ticker.name);
+        evaluate(params);
     }
 
     @Override
     public void Roll(StartParams params) {
-        try {
-            var candles = params.repo.cache.candle_cache.get(params.context.ticker);
-            if (candles == null || candles.size() < PERIOD + 1)
-                return;
+        evaluate(params);
+    }
 
-            var arr = candles.toArray();
-            double atrSum = 0;
-
-            for (int i = 1; i <= PERIOD; i++) {
-                Candle curr = (Candle) arr[i - 1];
-                Candle prev = (Candle) arr[i];
-                double tr = Math.max(curr.high - curr.low,
-                        Math.max(Math.abs(curr.high - prev.close),
-                                Math.abs(curr.low - prev.close)));
-                atrSum += tr;
-            }
-
-            double atr = atrSum / PERIOD;
-            double price = ((Candle) arr[0]).close;
-            double prevClose = ((Candle) arr[1]).close;
-
-            // Buy on strong upward breakout
-            if (price > prevClose + (atr * 1.5)) {
-                System.out.println("[F_ATR] Volatility breakout detected — buy signal");
-                Signal sig = new Signal(params.context.ticker.name, 82, CandleSize.min1, Instant.now());
-                params.repo.redis.send_signal(sig);
-            }
-        } catch (Exception e) {
-            e.printStackTrace();
+    private void evaluate(StartParams params) {
+        List<Candle> candles = candles(params);
+        if (candles.size() < PERIOD + 2) {
+            return;
+        }
+        double[] highs = Indicators.highs(candles);
+        double[] lows = Indicators.lows(candles);
+        double[] closes = Indicators.closes(candles);
+        double[] atr = Indicators.atrSeries(highs, lows, closes, PERIOD);
+        int n = closes.length;
+        double currentAtr = atr[n - 2]; // ATR excluding the breakout bar
+        if (Double.isNaN(currentAtr) || currentAtr <= 0) {
+            return;
+        }
+        params.repo.cache.set_var(params.context.ticker, "atr", atr[n - 1]);
+        double move = closes[n - 1] - closes[n - 2];
+        if (move > MULTIPLIER * currentAtr) {
+            emit(params, 0.70, String.format("ATR breakout: move %.2f > %.2fxATR %.2f",
+                    move, MULTIPLIER, currentAtr));
         }
     }
 }

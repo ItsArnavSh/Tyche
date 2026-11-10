@@ -1,7 +1,5 @@
 package entity
 
-type CandleSize int
-
 type TickerHistory struct {
 	Name    string
 	History CandleSeries

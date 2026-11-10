@@ -2,8 +2,6 @@ syntax = "proto3";
 
 package stockrec.v1;
 
-import "google/protobuf/empty.proto";
-
 option go_package = "gateway/proto/pb";
 
 service RustService {
@@ -60,6 +58,7 @@ message StockValue {
   float close = 2;
   float high = 3;
   float low = 4;
+  double volume = 5;
 }
 
 message StockUpdate {

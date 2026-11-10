@@ -1,55 +1,47 @@
 package org.Tyche.src.core.engine.Scheduler.Functions;
 
-import java.time.Instant;
-import org.Tyche.src.entity.Blocks.Candle;
-import org.Tyche.src.entity.CandleSize;
-import org.Tyche.src.entity.Signal;
-import org.Tyche.src.entity.StrategyEntity.StartParams;
+import java.util.List;
 
+import org.Tyche.src.entity.Blocks.Candle;
+import org.Tyche.src.entity.StrategyEntity.StartParams;
+import org.Tyche.src.util.Indicators;
+
+/** Stochastic %K crossing above %D in oversold territory. */
 public class F_Stochastic extends BaseFunction {
     private static final int K_PERIOD = 14;
     private static final int D_PERIOD = 3;
 
     @Override
     public void Boot(StartParams params) {
-        System.out.println("[F_Stochastic Boot] Initialized");
+        evaluate(params);
     }
 
     @Override
     public void Roll(StartParams params) {
-        try {
-            var candles = params.repo.cache.candle_cache.get(params.context.ticker);
-            if (candles == null || candles.size() < K_PERIOD + 5)
-                return;
+        evaluate(params);
+    }
 
-            var arr = candles.toArray();
-
-            double highestHigh = Double.MIN_VALUE;
-            double lowestLow = Double.MAX_VALUE;
-
-            for (int i = 0; i < K_PERIOD; i++) {
-                Candle c = (Candle) arr[i];
-                highestHigh = Math.max(highestHigh, c.high);
-                lowestLow = Math.min(lowestLow, c.low);
-            }
-
-            double currentClose = ((Candle) arr[0]).close;
-            double k = (lowestLow == highestHigh) ? 50 : ((currentClose - lowestLow) / (highestHigh - lowestLow)) * 100;
-
-            // Simple %D (SMA of %K)
-            double prevD = params.repo.cache.var_cache.getOrDefault("stoch_d", k);
-            double newD = (prevD * (D_PERIOD - 1) + k) / D_PERIOD;
-
-            params.repo.cache.set_var("stoch_k", k);
-            params.repo.cache.set_var("stoch_d", newD);
-
-            if (k < 20 && newD > prevD) { // Oversold + %K crossing above %D
-                System.out.println("[F_Stochastic] Oversold crossover — buy signal");
-                Signal sig = new Signal(params.context.ticker.name, 75, CandleSize.min1, Instant.now());
-                params.repo.redis.send_signal(sig);
-            }
-        } catch (Exception e) {
-            e.printStackTrace();
+    private void evaluate(StartParams params) {
+        List<Candle> candles = candles(params);
+        if (candles.size() < K_PERIOD + D_PERIOD + 1) {
+            return;
+        }
+        double[] highs = Indicators.highs(candles);
+        double[] lows = Indicators.lows(candles);
+        double[] closes = Indicators.closes(candles);
+        Indicators.StochasticResult stoch = Indicators.stochastic(highs, lows, closes, K_PERIOD, D_PERIOD);
+        int n = closes.length;
+        double prevK = stoch.k()[n - 2];
+        double prevD = stoch.d()[n - 2];
+        double currentK = stoch.k()[n - 1];
+        double currentD = stoch.d()[n - 1];
+        if (Double.isNaN(prevK) || Double.isNaN(prevD) || Double.isNaN(currentK) || Double.isNaN(currentD)) {
+            return;
+        }
+        params.repo.cache.set_var(params.context.ticker, "stoch_k", currentK);
+        params.repo.cache.set_var(params.context.ticker, "stoch_d", currentD);
+        if (prevK <= prevD && currentK > currentD && currentK < 30) {
+            emit(params, 0.74, String.format("stochastic bullish cross (K %.1f, D %.1f)", currentK, currentD));
         }
     }
 }

@@ -1,5 +1,6 @@
 package org.Tyche.src.entity;
 
+import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
 import com.fasterxml.jackson.annotation.JsonProperty;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.SerializationFeature;
@@ -7,6 +8,7 @@ import com.fasterxml.jackson.datatype.jsr310.JavaTimeModule;
 
 import java.time.Instant;
 
+@JsonIgnoreProperties(ignoreUnknown = true)
 public class Signal {
 
     @JsonProperty("name")
@@ -21,16 +23,32 @@ public class Signal {
     @JsonProperty("time")
     private Instant time;
 
+    /** Identifier of the strategy that produced the signal (e.g. "rsi"). */
+    @JsonProperty("strategy")
+    private String strategy;
+
     // --- Constructors ---
 
     public Signal() {
     }
 
     public Signal(String name, double confidence, CandleSize size, Instant time) {
+        this(name, confidence, size, time, "unknown");
+    }
+
+    public Signal(String name, double confidence, CandleSize size, Instant time, String strategy) {
         this.name = name;
-        this.confidence = confidence;
+        this.confidence = clamp(confidence);
         this.size = size;
-        this.time = time;
+        this.time = time == null ? Instant.now() : time;
+        this.strategy = strategy == null || strategy.isBlank() ? "unknown" : strategy;
+    }
+
+    private static double clamp(double value) {
+        if (Double.isNaN(value) || Double.isInfinite(value)) {
+            return 0;
+        }
+        return Math.max(0, Math.min(1, value));
     }
 
     // --- Getters / Setters ---
@@ -48,7 +66,7 @@ public class Signal {
     }
 
     public void setConfidence(double confidence) {
-        this.confidence = confidence;
+        this.confidence = clamp(confidence);
     }
 
     public CandleSize getSize() {
@@ -65,6 +83,14 @@ public class Signal {
 
     public void setTime(Instant time) {
         this.time = time;
+    }
+
+    public String getStrategy() {
+        return strategy;
+    }
+
+    public void setStrategy(String strategy) {
+        this.strategy = strategy;
     }
 
     // --- JSON serialization ---

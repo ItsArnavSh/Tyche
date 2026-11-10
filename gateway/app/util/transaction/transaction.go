@@ -13,6 +13,8 @@ type TransactionHandler interface {
 
 var _ TransactionHandler = &paper.PaperTrade{}
 
-func NewTransactionHandler() (TransactionHandler, error) {
-	return paper.NewPaperTrade(10000), nil
+// NewTransactionHandler creates the paper ledger.  Fee is expressed in basis
+// points (1 bps = 0.01%) to model brokerage/slippage conservatively.
+func NewTransactionHandler(initialCash, feeBPS float64) (TransactionHandler, error) {
+	return paper.NewPaperTradeWithFees(initialCash, feeBPS), nil
 }

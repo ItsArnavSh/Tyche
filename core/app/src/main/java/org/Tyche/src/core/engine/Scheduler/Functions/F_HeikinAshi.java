@@ -1,39 +1,43 @@
 package org.Tyche.src.core.engine.Scheduler.Functions;
 
-import java.time.Instant;
-import org.Tyche.src.entity.Blocks.Candle;
-import org.Tyche.src.entity.CandleSize;
-import org.Tyche.src.entity.Signal;
-import org.Tyche.src.entity.StrategyEntity.StartParams;
+import java.util.List;
 
+import org.Tyche.src.entity.Blocks.Candle;
+import org.Tyche.src.entity.StrategyEntity.StartParams;
+import org.Tyche.src.util.Indicators;
+
+/** Two consecutive bullish Heikin-Ashi candles after a bearish candle. */
 public class F_HeikinAshi extends BaseFunction {
 
     @Override
     public void Boot(StartParams params) {
-        System.out.println("[F_HeikinAshi Boot] Initialized");
+        evaluate(params);
     }
 
     @Override
     public void Roll(StartParams params) {
-        try {
-            var candles = params.repo.cache.candle_cache.get(params.context.ticker);
-            if (candles == null || candles.size() < 4)
-                return;
+        evaluate(params);
+    }
 
-            var arr = candles.toArray();
-            Candle c0 = (Candle) arr[0]; // current
-            Candle c1 = (Candle) arr[1]; // previous
-
-            double haClose = (c0.open + c0.high + c0.low + c0.close) / 4;
-            double haOpen = (c1.open + c1.close) / 2; // simplified
-
-            if (haClose > haOpen) { // Bullish Heikin Ashi candle
-                System.out.println("[F_HeikinAshi] Bullish HA candle — buy signal");
-                Signal sig = new Signal(params.context.ticker.name, 70, CandleSize.min1, Instant.now());
-                params.repo.redis.send_signal(sig);
-            }
-        } catch (Exception e) {
-            e.printStackTrace();
+    private void evaluate(StartParams params) {
+        List<Candle> candles = candles(params);
+        if (candles.size() < 4) {
+            return;
+        }
+        double[] opens = new double[candles.size()];
+        double[] highs = Indicators.highs(candles);
+        double[] lows = Indicators.lows(candles);
+        double[] closes = Indicators.closes(candles);
+        for (int i = 0; i < candles.size(); i++) {
+            opens[i] = candles.get(i).open;
+        }
+        Indicators.HeikinAshiResult ha = Indicators.heikinAshi(opens, highs, lows, closes);
+        int n = closes.length;
+        boolean prevBull = ha.close()[n - 2] > ha.open()[n - 2];
+        boolean currentBull = ha.close()[n - 1] > ha.open()[n - 1];
+        boolean beforeBear = ha.close()[n - 3] <= ha.open()[n - 3];
+        if (beforeBear && prevBull && currentBull) {
+            emit(params, 0.66, "two bullish Heikin-Ashi candles after a bearish candle");
         }
     }
 }

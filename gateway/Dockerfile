@@ -1,19 +1,20 @@
-FROM golang:1.25.5-alpine
+FROM golang:1.25.5-alpine AS builder
 
-WORKDIR /app
+WORKDIR /src
 
-# Install git (needed for modules sometimes)
 RUN apk add --no-cache git
 
-# Cache deps
 COPY go.mod go.sum ./
 RUN go mod download
 
-# Copy source
 COPY . .
+RUN CGO_ENABLED=0 go build -trimpath -ldflags="-s -w" -o /out/tyche-gateway .
 
-# Expose port (change if needed)
-EXPOSE 8080
+FROM alpine:3.21
 
-# Run directly
-CMD ["go", "run", "."]
+RUN apk add --no-cache ca-certificates tzdata
+
+COPY --from=builder /out/tyche-gateway /usr/local/bin/tyche-gateway
+
+USER nobody
+ENTRYPOINT ["tyche-gateway"]

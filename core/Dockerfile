@@ -1,7 +1,7 @@
 FROM gradle:8.7-jdk21 AS builder
 WORKDIR /app
 COPY . .
-RUN gradle :app:installDist -x test
+RUN ./gradlew :app:installDist -x test --no-daemon
 
 FROM eclipse-temurin:21-jre
 WORKDIR /app

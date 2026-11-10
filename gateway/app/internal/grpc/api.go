@@ -2,43 +2,42 @@ package grpc
 
 import (
 	"context"
-	"fmt"
 	"gateway/app/util/entity"
 	pb "gateway/proto"
 )
 
-// All the api interface functions for the GRPC comm are set here
+// All the API functions for the gRPC communication live here.
 
-// SendBootRequest sends boot signal with historical data
+// SendBootRequest sends historical data to the core.
 func (g *GrpcClient) SendBootRequest(ctx context.Context, histories []entity.TickerHistory) error {
-	param := &pb.SendBootSignalRequest{
-		Hist: convertTickerHistoriesToProto(histories),
+	if len(histories) == 0 {
+		return nil
 	}
+	param := &pb.SendBootSignalRequest{Hist: convertTickerHistoriesToProto(histories)}
 	_, err := g.client.SendBootSignal(ctx, param)
-	fmt.Printf("Error: %v", err)
 	return err
 }
 
-// SendRollData sends rolling/latest stock updates
+// SendRollData sends latest candle updates and returns jobs the core needs
+// re-booted.
 func (g *GrpcClient) SendRollData(ctx context.Context, updates []entity.LatestVal) ([]entity.MonoCandle, error) {
-	param := &pb.SendRollDataRequest{
-		Stock: convertLatestValsToProto(updates),
+	if len(updates) == 0 {
+		return nil, nil
 	}
-
+	param := &pb.SendRollDataRequest{Stock: convertLatestValsToProto(updates)}
 	resp, err := g.client.SendRollData(ctx, param)
 	if err != nil {
 		return nil, err
 	}
-
-	return convertProtoToMonoCandles(resp.Missing), nil
+	return convertProtoToMonoCandles(resp.GetMissing()), nil
 }
 
-// SendKillSignal sends kill signal for specific tickers
+// SendKillSignal removes tickers from the scheduler and drops their caches.
 func (g *GrpcClient) SendKillSignal(ctx context.Context, tickers []string) error {
-	param := &pb.SendKillSignalRequest{
-		Name: tickers,
+	if len(tickers) == 0 {
+		return nil
 	}
-	_, err := g.client.SendKillSignal(ctx, param)
+	_, err := g.client.SendKillSignal(ctx, &pb.SendKillSignalRequest{Name: tickers})
 	return err
 }
 
@@ -72,35 +71,31 @@ func convertCandleDataSliceToProto(candles []entity.CandleData) []*pb.StockValue
 
 func convertCandleDataToProto(candle entity.CandleData) *pb.StockValue {
 	return &pb.StockValue{
-		Open:  float32(candle.Open),
-		Close: float32(candle.Close),
-		High:  float32(candle.High),
-		Low:   float32(candle.Low),
+		Open:   float32(candle.Open),
+		Close:  float32(candle.Close),
+		High:   float32(candle.High),
+		Low:    float32(candle.Low),
+		Volume: float64(candle.Volume),
 	}
 }
 
 func convertLatestValsToProto(updates []entity.LatestVal) []*pb.StockUpdate {
-	// Group by ticker name
-	updateMap := make(map[string][]*pb.LatestStockVals)
-
+	grouped := make(map[string][]*pb.LatestStockVals)
+	order := make([]string, 0)
 	for _, update := range updates {
 		ticker := update.Stock.Name
-		latestVal := &pb.LatestStockVals{
+		if _, seen := grouped[ticker]; !seen {
+			order = append(order, ticker)
+		}
+		grouped[ticker] = append(grouped[ticker], &pb.LatestStockVals{
 			Size: convertCandleSizeToProto(update.Stock.Size),
 			Val:  convertCandleDataToProto(update.Candle),
-		}
-		updateMap[ticker] = append(updateMap[ticker], latestVal)
-	}
-
-	// Convert map to slice
-	result := make([]*pb.StockUpdate, 0, len(updateMap))
-	for ticker, vals := range updateMap {
-		result = append(result, &pb.StockUpdate{
-			Name: ticker,
-			Vals: vals,
 		})
 	}
-
+	result := make([]*pb.StockUpdate, 0, len(grouped))
+	for _, ticker := range order {
+		result = append(result, &pb.StockUpdate{Name: ticker, Vals: grouped[ticker]})
+	}
 	return result
 }
 
@@ -127,8 +122,8 @@ func convertProtoToMonoCandles(stockSeries []*pb.StockSeries) []entity.MonoCandl
 	result := make([]entity.MonoCandle, len(stockSeries))
 	for i, series := range stockSeries {
 		result[i] = entity.MonoCandle{
-			Name: series.Name,
-			Size: convertProtoToCandleSize(series.Size),
+			Name: series.GetName(),
+			Size: convertProtoToCandleSize(series.GetSize()),
 		}
 	}
 	return result

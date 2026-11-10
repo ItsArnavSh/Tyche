@@ -1,52 +1,46 @@
 package org.Tyche.src.core.engine.Scheduler.Functions;
 
-import java.time.Instant;
-import org.Tyche.src.entity.Blocks.Candle;
-import org.Tyche.src.entity.CandleSize;
-import org.Tyche.src.entity.Signal;
-import org.Tyche.src.entity.StrategyEntity.StartParams;
+import java.util.Arrays;
+import java.util.List;
 
+import org.Tyche.src.entity.Blocks.Candle;
+import org.Tyche.src.entity.StrategyEntity.StartParams;
+import org.Tyche.src.util.Indicators;
+
+/** Commodity Channel Index reversal from oversold. */
 public class F_CCI extends BaseFunction {
     private static final int PERIOD = 20;
 
     @Override
     public void Boot(StartParams params) {
-        System.out.println("[F_CCI Boot] Initialized");
+        evaluate(params);
     }
 
     @Override
     public void Roll(StartParams params) {
-        try {
-            var candles = params.repo.cache.candle_cache.get(params.context.ticker);
-            if (candles == null || candles.size() < PERIOD)
-                return;
+        evaluate(params);
+    }
 
-            var arr = candles.toArray();
-
-            double sumTP = 0;
-            for (int i = 0; i < PERIOD; i++) {
-                Candle c = (Candle) arr[i];
-                sumTP += (c.high + c.low + c.close) / 3.0;
-            }
-            double smaTP = sumTP / PERIOD;
-
-            double meanDeviation = 0;
-            for (int i = 0; i < PERIOD; i++) {
-                Candle c = (Candle) arr[i];
-                meanDeviation += Math.abs(((c.high + c.low + c.close) / 3.0) - smaTP);
-            }
-            meanDeviation /= PERIOD;
-
-            double currentTP = (((Candle) arr[0]).high + ((Candle) arr[0]).low + ((Candle) arr[0]).close) / 3.0;
-            double cci = (meanDeviation == 0) ? 0 : (currentTP - smaTP) / (0.015 * meanDeviation);
-
-            if (cci < -100) {
-                System.out.println("[F_CCI] Oversold (" + cci + ") — buy signal");
-                Signal sig = new Signal(params.context.ticker.name, 80, CandleSize.min1, Instant.now());
-                params.repo.redis.send_signal(sig);
-            }
-        } catch (Exception e) {
-            e.printStackTrace();
+    private void evaluate(StartParams params) {
+        List<Candle> candles = candles(params);
+        if (candles.size() < PERIOD + 2) {
+            return;
+        }
+        double[] highs = Indicators.highs(candles);
+        double[] lows = Indicators.lows(candles);
+        double[] closes = Indicators.closes(candles);
+        double current = Indicators.cci(highs, lows, closes, PERIOD);
+        double previous = Indicators.cci(
+                Arrays.copyOf(highs, highs.length - 1),
+                Arrays.copyOf(lows, lows.length - 1),
+                Arrays.copyOf(closes, closes.length - 1),
+                PERIOD);
+        if (Double.isNaN(current) || Double.isNaN(previous)) {
+            return;
+        }
+        params.repo.cache.set_var(params.context.ticker, "cci", current);
+        if (previous < -100 && current >= -100) {
+            emit(params, 0.72, String.format("CCI%d exited oversold (%.1f -> %.1f)", PERIOD, previous, current));
         }
     }
 }

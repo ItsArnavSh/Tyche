@@ -1,2 +1,15 @@
 .zed
 .ropeproject
+
+# Local configuration may contain Kite credentials.
+.env
+.env.*
+!.env.example
+
+# Python
+__pycache__/
+*.py[cod]
+.pytest_cache/
+*.egg-info/
+
+.DS_Store

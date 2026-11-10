@@ -2,86 +2,215 @@ package bucket
 
 import (
 	"fmt"
+	"sync"
+	"time"
+
 	"gateway/app/interface/producer"
 	"gateway/app/util/entity"
 	util "gateway/app/util/gen_util"
-	"time"
 )
 
-// Each stock has its own DecayMap
-// Each DecayMap contains a list of all the active signals
-// On running GetConfidence, we scan through all the active signals
-// And also remove the irrelevant ones, and basically plot the value on an exponential decay curve
-// It becomes irrelevant when it is past the ticker size expiry date
+// Bucket aggregates decaying trading signals per ticker.
 //
-//
-
+// Each ticker keeps at most one live signal per strategy; a fresh emission
+// from the same strategy replaces the previous one.  Confidence decays
+// exponentially and reaches ~1% of its initial value at the candle-size
+// expiry, after which the signal is pruned.
 type Bucket struct {
-	DecayMap map[string]util.Set[entity.Signal]
+	mu       sync.RWMutex
+	Signals  map[string]map[string]entity.Signal // ticker -> strategy -> signal
 	Producer producer.Producer
 }
 
-func NewBucket(producer producer.Producer) Bucket {
-	return Bucket{
-		DecayMap: make(map[string]util.Set[entity.Signal]),
-		Producer: producer,
+func NewBucket(p producer.Producer) *Bucket {
+	return &Bucket{
+		Signals:  make(map[string]map[string]entity.Signal),
+		Producer: p,
 	}
 }
-func (b *Bucket) GetConfidence(name string) (float64, error) {
-	sol := b.DecayMap[name]
-	if sol == nil {
-		return 0, fmt.Errorf("Stock not found in bucket")
-	}
-	return b.convertToConfidence(name), nil
-}
-func (b *Bucket) convertToConfidence(name string) float64 {
-	m, exists := b.DecayMap[name]
-	if !exists {
-		return 0.0
-	}
 
-	var totalConfidence float64 = 0.0
+func (b *Bucket) SignalBucket(signal entity.Signal) {
+	if signal.Name == "" || signal.Size < entity.SEC5 || signal.Size > entity.HOUR1 {
+		return
+	}
+	if signal.Confidence > 1 && signal.Confidence <= 100 {
+		signal.Confidence /= 100
+	}
+	signal = signal.Clamped()
+	if signal.Time.IsZero() {
+		signal.Time = time.Now()
+	}
 	now := time.Now()
+	if signal.Expired(now) {
+		return
+	}
 
-	var toRemove []entity.Signal
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	strategies := b.Signals[signal.Name]
+	if strategies == nil {
+		strategies = make(map[string]entity.Signal)
+		b.Signals[signal.Name] = strategies
+	}
+	strategies[signal.StrategyKey()] = signal
+}
 
-	for signal := range m {
-		if signal.Size.GetExpiryDuration().Before(now) {
-			toRemove = append(toRemove, signal)
+// GetConfidence returns the aggregate decayed confidence for a ticker in
+// [0, 1].  Unknown tickers return (0, nil).
+func (b *Bucket) GetConfidence(name string) (float64, error) {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	strategies, ok := b.Signals[name]
+	if !ok {
+		return 0, nil
+	}
+	return b.confidenceLocked(name, strategies, time.Now()), nil
+}
+
+func (b *Bucket) confidenceLocked(name string, strategies map[string]entity.Signal, now time.Time) float64 {
+	total, _ := b.confidenceStatsLocked(name, strategies, now)
+	return total
+}
+
+// confidenceStatsLocked returns the decayed aggregate and the strongest raw
+// confidence among live signals for a ticker.
+func (b *Bucket) confidenceStatsLocked(name string, strategies map[string]entity.Signal, now time.Time) (float64, float64) {
+	total := 0.0
+	peak := 0.0
+	for key, signal := range strategies {
+		if signal.Expired(now) {
+			delete(strategies, key)
 			continue
 		}
-
-		// Calculate decayed confidence
-		decayed := util.ExponentialDecay(
-			signal.Confidence,                   // starting value
-			now,                                 // current time
-			signal.Time,                         // start time of this signal
-			float64(signal.Size.GetMilliSize()), // total decay duration in ms
-		)
-
-		totalConfidence += decayed
+		if signal.Confidence > peak {
+			peak = signal.Confidence
+		}
+		duration := float64(signal.Size.Duration().Milliseconds())
+		total += util.ExponentialDecay(signal.Confidence, now, signal.Time, duration)
 	}
-
-	// Clean up expired signals **after** iteration
-	for _, sig := range toRemove {
-		m.Remove(sig)
+	if len(strategies) == 0 {
+		delete(b.Signals, name)
 	}
-
-	return totalConfidence
-}
-func (b *Bucket) SignalBucket(signal entity.Signal) {
-	if b.DecayMap[signal.Name] == nil {
-		b.DecayMap[signal.Name] = util.NewSet[entity.Signal]()
+	if total > 1 {
+		total = 1
 	}
-	b.DecayMap[signal.Name].Add(signal)
+	if total < 0 {
+		total = 0
+	}
+	return total, peak
 }
 
-func (b *Bucket) GetTopNinBudget(N int, budget float64) []entity.SignalConf {
-	pq := util.NewBoundedMaxHeap(N)
-	for key, _ := range b.DecayMap {
-		if budget >= b.Producer.GetCurrentValue(key) {
-			pq.Push(entity.SignalConf{Name: key, ResultantConf: b.convertToConfidence(key)})
+// PeakConfidence returns the strongest raw confidence among live signals for a
+// ticker.  Unlike GetConfidence it does not decay with age, which makes it the
+// right comparison for "did a materially weaker signal replace our reason to
+// hold?" checks.  A return of false means no live signal remains.
+func (b *Bucket) PeakConfidence(name string) (float64, bool) {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	strategies, ok := b.Signals[name]
+	if !ok {
+		return 0, false
+	}
+	_, peak := b.confidenceStatsLocked(name, strategies, time.Now())
+	return peak, peak > 0
+}
+
+// HasSignals reports whether the ticker still has at least one live signal.
+func (b *Bucket) HasSignals(name string) bool {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	strategies, ok := b.Signals[name]
+	if !ok {
+		return false
+	}
+	now := time.Now()
+	live := false
+	for key, signal := range strategies {
+		if signal.Expired(now) {
+			delete(strategies, key)
+			continue
+		}
+		live = true
+	}
+	if len(strategies) == 0 {
+		delete(b.Signals, name)
+	}
+	return live
+}
+
+// GetTopNinBudget returns at most N tickers with the highest aggregate
+// confidence whose current price is positive and affordable.
+func (b *Bucket) GetTopNinBudget(n int, budget float64) []entity.SignalConf {
+	if n <= 0 || budget <= 0 || b.Producer == nil {
+		return nil
+	}
+	now := time.Now()
+
+	b.mu.Lock()
+	type candidate struct {
+		name       string
+		confidence float64
+		peak       float64
+	}
+	candidates := make([]candidate, 0, len(b.Signals))
+	for name, strategies := range b.Signals {
+		conf, peak := b.confidenceStatsLocked(name, strategies, now)
+		if conf > 0 {
+			candidates = append(candidates, candidate{name: name, confidence: conf, peak: peak})
 		}
 	}
-	return pq.GetSorted()
+	b.mu.Unlock()
+
+	heap := util.NewBoundedMaxHeap(n)
+	for _, c := range candidates {
+		if b.Producer == nil {
+			continue
+		}
+		price := b.Producer.GetCurrentValue(c.name)
+		if price <= 0 || price > budget {
+			continue
+		}
+		heap.Push(entity.SignalConf{
+			Name:           c.name,
+			ResultantConf:  c.confidence,
+			PeakConfidence: c.peak,
+		})
+	}
+	return heap.GetSorted()
+}
+
+// PruneExpired drops stale signals and empty ticker entries.
+func (b *Bucket) PruneExpired(now time.Time) {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	for name, strategies := range b.Signals {
+		for key, signal := range strategies {
+			if signal.Expired(now) {
+				delete(strategies, key)
+			}
+		}
+		if len(strategies) == 0 {
+			delete(b.Signals, name)
+		}
+	}
+}
+
+func (b *Bucket) Size() int {
+	b.mu.RLock()
+	defer b.mu.RUnlock()
+	return len(b.Signals)
+}
+
+// Reset clears all signals (useful for tests and kill switches).
+func (b *Bucket) Reset() {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	b.Signals = make(map[string]map[string]entity.Signal)
+}
+
+// DebugString is used by diagnostics.
+func (b *Bucket) DebugString() string {
+	b.mu.RLock()
+	defer b.mu.RUnlock()
+	return fmt.Sprintf("bucket{tickers=%d}", len(b.Signals))
 }

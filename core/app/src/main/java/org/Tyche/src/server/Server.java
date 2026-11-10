@@ -1,6 +1,5 @@
 package org.Tyche.src.server;
 
-import org.Tyche.Config;
 import org.Tyche.src.core.engine.Scheduler.LoadBalancer;
 import org.Tyche.src.core.engine.Scheduler.Scheduler;
 import org.Tyche.src.core.engine.Workers.Rayon;
@@ -15,36 +14,42 @@ import org.slf4j.LoggerFactory;
 
 public class Server {
 
-    LoadBalancer lb;
-    Scheduler sch;
-    BotClock timer;
-    StockHandler sh;
-    Repository repo;
-    Rayon engine;
-    Producer prod;
-    public StockInterface stockapi;
+    private final LoadBalancer lb;
+    private final Scheduler sch;
+    private final BotClock timer;
+    private final StockHandler sh;
+    private final Repository repo;
+    private final Rayon engine;
+    public final StockInterface stockapi;
 
     private static final Logger logger = LoggerFactory.getLogger(Server.class);
 
     public Server() {
         this.repo = new Repository();
         this.lb = new LoadBalancer(repo);
-
         this.sch = new Scheduler(1);
         this.timer = new BotClock();
         this.sh = new StockHandler(timer);
         this.engine = new Rayon(lb, sh, sch, repo);
         this.stockapi = new StockInterface(engine);
-
     }
 
     public void StartServer() throws Exception {
-        logger.info("Booting Server");
+        logger.info("Booting server");
         this.engine.BootThreads();
         logger.info("Server initialization completed");
-        // this.stockapi.StockProcess();
-
+        Runtime.getRuntime().addShutdownHook(new Thread(this::StopServer, "tyche-shutdown"));
         GRPC.start(this);
+    }
 
+    public void StopServer() {
+        logger.info("Stopping server");
+        this.engine.StopServer();
+        this.lb.shutdown();
+        this.repo.redis.close();
+    }
+
+    public Producer producer() {
+        return StockInterface.createProducer();
     }
 }
