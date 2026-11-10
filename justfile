@@ -14,6 +14,9 @@ build-core:
 build-gateway:
     cd gateway && mkdir -p bin && go build -o bin/tyche-gateway .
 
+dashboard:
+    cd monitoring/client && npm run dev
+
 test: test-java test-go test-python
 
 test-java:
@@ -24,6 +27,14 @@ test-go:
 
 test-python:
     python3 -m unittest discover -s backtest/tests -v
+
+test-dashboard:
+    cd monitoring/client && npm run check && npm run build
+
+proto:
+    [ -n "$(command -v buf)" ] || { echo "buf is required: https://buf.build/docs/installation"; exit 1; }
+    cd gateway && buf generate
+    cd gateway && buf generate --template buf.gen.java.yaml -o ../core/app/src/generated/java
 
 backtest:
     python3 -m backtest --symbols "{{symbols}}" --period "{{period}}" --strategy "{{strategy}}" --cash "{{cash}}"
@@ -53,3 +64,4 @@ logs:
 clean:
     -cd core && ./gradlew clean --no-daemon
     rm -rf gateway/bin backtest/__pycache__ backtest/tests/__pycache__
+    rm -rf monitoring/client/.svelte-kit monitoring/client/build

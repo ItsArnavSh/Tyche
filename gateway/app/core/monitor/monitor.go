@@ -7,6 +7,7 @@ import (
 	"sync"
 	"time"
 
+	"gateway/app/status"
 	"gateway/app/util/bucket"
 	"gateway/app/util/entity"
 	"gateway/app/util/transaction"
@@ -20,6 +21,7 @@ type ClosedTrade struct {
 	Exit     float64
 	PnL      float64
 	Reason   string
+	OpenedAt time.Time
 	ClosedAt time.Time
 }
 
@@ -44,21 +46,32 @@ type TradeMonitor struct {
 	closed        []ClosedTrade
 	stats         Stats
 	checkInterval time.Duration
+	recorder      status.Recorder
 }
 
-func NewTradeMonitor(th transaction.TransactionHandler, cb *bucket.Bucket) *TradeMonitor {
-	return NewTradeMonitorWithInterval(th, cb, 5*time.Second)
+func NewTradeMonitor(th transaction.TransactionHandler, cb *bucket.Bucket, recorders ...status.Recorder) *TradeMonitor {
+	return NewTradeMonitorWithInterval(th, cb, 5*time.Second, recorders...)
 }
 
-func NewTradeMonitorWithInterval(th transaction.TransactionHandler, cb *bucket.Bucket, interval time.Duration) *TradeMonitor {
+func NewTradeMonitorWithInterval(
+	th transaction.TransactionHandler,
+	cb *bucket.Bucket,
+	interval time.Duration,
+	recorders ...status.Recorder,
+) *TradeMonitor {
 	if interval <= 0 {
 		interval = 5 * time.Second
+	}
+	var recorder status.Recorder
+	if len(recorders) > 0 {
+		recorder = recorders[0]
 	}
 	return &TradeMonitor{
 		transaction:   th,
 		bucket:        cb,
 		positions:     make(map[string]entity.TransactionInstruction),
 		checkInterval: interval,
+		recorder:      recorder,
 	}
 }
 
@@ -201,9 +214,15 @@ func (m *TradeMonitor) sellPosition(position entity.TransactionInstruction, curr
 		Reason:   reason,
 	}
 	if err := m.transaction.Process(sellInstruction); err != nil {
+		if m.recorder != nil {
+			m.recorder.RecordOrder(sellInstruction, "rejected", err)
+		}
 		// Keep the position: a rejected sell must not silently disappear.
 		log.Printf("[TradeMonitor] sell failed for %s: %v", position.Ticker, err)
 		return
+	}
+	if m.recorder != nil {
+		m.recorder.RecordOrder(sellInstruction, "filled", nil)
 	}
 
 	buyValue := float64(position.Quantity) * position.Price
@@ -226,15 +245,40 @@ func (m *TradeMonitor) sellPosition(position entity.TransactionInstruction, curr
 		} else {
 			m.stats.Losses++
 		}
-		m.closed = append(m.closed, ClosedTrade{
+		closedAt := time.Now()
+		trade := ClosedTrade{
 			Ticker:   position.Ticker,
 			Quantity: position.Quantity,
 			Entry:    position.Price,
 			Exit:     currentPrice,
 			PnL:      pnl,
 			Reason:   reason,
-			ClosedAt: time.Now(),
-		})
+			OpenedAt: position.OpenedAt,
+			ClosedAt: closedAt,
+		}
+		m.closed = append(m.closed, trade)
+		if m.recorder != nil {
+			pnlPct := 0.0
+			if buyValue > 0 {
+				pnlPct = pnl / buyValue * 100
+			}
+			duration := int64(0)
+			if !trade.OpenedAt.IsZero() {
+				duration = int64(trade.ClosedAt.Sub(trade.OpenedAt).Seconds())
+			}
+			m.recorder.RecordClosedTrade(status.ClosedTrade{
+				Ticker:    trade.Ticker,
+				Quantity:  trade.Quantity,
+				Entry:     trade.Entry,
+				Exit:      trade.Exit,
+				PnL:       trade.PnL,
+				PnLPct:    pnlPct,
+				Reason:    trade.Reason,
+				OpenedAt:  trade.OpenedAt,
+				ClosedAt:  trade.ClosedAt,
+				DurationS: duration,
+			})
+		}
 	}
 	m.mu.Unlock()
 
@@ -244,7 +288,7 @@ func (m *TradeMonitor) sellPosition(position entity.TransactionInstruction, curr
 
 func samePosition(a, b entity.TransactionInstruction) bool {
 	return a.Ticker == b.Ticker && a.Quantity == b.Quantity && a.Price == b.Price &&
-		a.SellAfter.Equal(b.SellAfter)
+		a.SellAfter.Equal(b.SellAfter) && a.OpenedAt.Equal(b.OpenedAt)
 }
 
 func (m *TradeMonitor) PrintSummary() {

@@ -10,6 +10,7 @@ import (
 
 	"gateway/app/config"
 	"gateway/app/core/monitor"
+	"gateway/app/status"
 	"gateway/app/util/bucket"
 	"gateway/app/util/entity"
 	"gateway/app/util/transaction"
@@ -27,6 +28,7 @@ type DecisionLayer struct {
 
 	settings config.DecisionSettings
 	interval time.Duration
+	recorder status.Recorder
 
 	mu      sync.Mutex
 	lastBuy map[string]time.Time
@@ -37,6 +39,7 @@ type DecisionLayer struct {
 type Options struct {
 	Settings config.DecisionSettings
 	Interval time.Duration
+	Recorder status.Recorder
 }
 
 func NewDecisionLayer(
@@ -63,6 +66,7 @@ func NewDecisionLayer(
 		monitor:     mon,
 		settings:    opts.Settings,
 		interval:    opts.Interval,
+		recorder:    opts.Recorder,
 		lastBuy:     make(map[string]time.Time),
 	}
 }
@@ -79,6 +83,9 @@ func (d *DecisionLayer) StartSignalPoller(ctx context.Context) {
 			if !ok {
 				log.Println("[SignalPoller] signal channel closed — stopping")
 				return
+			}
+			if d.recorder != nil {
+				d.recorder.RecordSignal(signal)
 			}
 			d.bucket.SignalBucket(signal)
 		}
@@ -226,6 +233,7 @@ func (d *DecisionLayer) considerChoices(
 			MaxVal:     price * (1 + takeProfit),
 			MinValSell: price * (1 - stopLoss),
 			SellAfter:  now.Add(hold),
+			OpenedAt:   now,
 		})
 		remainingCash -= cost
 		if remainingCash <= 0 {
@@ -251,8 +259,14 @@ func (d *DecisionLayer) BeginTransaction(insts []entity.TransactionInstruction) 
 	filled := 0
 	for _, inst := range insts {
 		if err := d.transaction.Process(inst); err != nil {
+			if d.recorder != nil {
+				d.recorder.RecordOrder(inst, "rejected", err)
+			}
 			log.Printf("[BeginTransaction] %s %s rejected: %v", inst.Action, inst.Ticker, err)
 			continue
+		}
+		if d.recorder != nil {
+			d.recorder.RecordOrder(inst, "filled", nil)
 		}
 		if inst.Action == entity.BUY {
 			if !d.monitor.AddPosition(inst) {

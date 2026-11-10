@@ -98,6 +98,11 @@ func (r *RedisQueue) Push(ctx context.Context, signal *entity.Signal) error {
 	return r.client.RPush(ctx, r.queueName, data).Err()
 }
 
+// Ping checks the Redis connection without disturbing the signal queue.
+func (r *RedisQueue) Ping(ctx context.Context) error {
+	return r.client.Ping(ctx).Err()
+}
+
 // QueueLength returns the current queue size
 func (r *RedisQueue) QueueLength(ctx context.Context) (int64, error) {
 	return r.client.LLen(ctx, r.queueName).Result()

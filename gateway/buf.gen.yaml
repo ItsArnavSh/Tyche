@@ -1,23 +1,14 @@
-# buf.gen.yaml
 version: v2
-
+# The gateway owns the single proto source at proto/stockrec.proto.
+# Generate Go stubs into gateway/proto:
+#   cd gateway && buf generate
 plugins:
-  - remote: buf.build/connectrpc/go:v1.17.0
-    out: .
-    opt:
-      - paths=source_relative
-
-  - remote: buf.build/grpc-ecosystem/gateway:v2.24.0
-    out: .
+  - remote: buf.build/protocolbuffers/go:v1.36.11
+    out: proto
     opt:
       - paths=source_relative
 
   - remote: buf.build/grpc/go:v1.5.1
-    out: .
-    opt:
-      - paths=source_relative
-
-  - remote: buf.build/protocolbuffers/go:v1.35.2
-    out: .
+    out: proto
     opt:
       - paths=source_relative

@@ -17,17 +17,12 @@ services:
     expose:
       - "50051"
     environment:
-      TYCHE_DATA_SOURCE: ${TYCHE_DATA_SOURCE:-yahoo}
-      TYCHE_SYMBOLS: ${TYCHE_SYMBOLS:-RELIANCE.NS,TCS.NS,HDFCBANK.NS,INFY.NS,ICICIBANK.NS,SBIN.NS,ITC.NS,LT.NS,BHARTIARTL.NS,HINDUNILVR.NS}
       TYCHE_REDIS_HOST: redis
       TYCHE_REDIS_PORT: "6379"
       TYCHE_REDIS_ENABLED: "true"
       TYCHE_GRPC_PORT: "50051"
-      TYCHE_BOOT_CANDLES: ${TYCHE_BOOT_CANDLES:-300}
+      TYCHE_SIGNAL_QUEUE: ${TYCHE_SIGNAL_QUEUE:-signal}
       TYCHE_SIGNAL_COOLDOWN_MS: ${TYCHE_SIGNAL_COOLDOWN_MS:-60000}
-      TYCHE_KITE_API_KEY: ${TYCHE_KITE_API_KEY:-}
-      TYCHE_KITE_API_SECRET: ${TYCHE_KITE_API_SECRET:-}
-      TYCHE_KITE_ACCESS_TOKEN: ${TYCHE_KITE_ACCESS_TOKEN:-}
     healthcheck:
       test: ["CMD-SHELL", "bash -c '</dev/tcp/127.0.0.1/50051'"]
       interval: 10s
@@ -41,50 +36,35 @@ services:
   gateway:
     build: ./gateway
     restart: unless-stopped
+    # Pass every optional gateway setting from .env. The Go config owns the
+    # defaults, so there is no second copy of the symbol/risk settings here.
+    env_file:
+      - path: .env
+        required: false
     environment:
-      TYCHE_DATA_SOURCE: ${TYCHE_DATA_SOURCE:-yahoo}
-      TYCHE_SYMBOLS: ${TYCHE_SYMBOLS:-RELIANCE.NS,TCS.NS,HDFCBANK.NS,INFY.NS,ICICIBANK.NS,SBIN.NS,ITC.NS,LT.NS,BHARTIARTL.NS,HINDUNILVR.NS}
       TYCHE_CORE_ADDR: core:50051
       TYCHE_REDIS_ADDR: redis:6379
-      TYCHE_SIGNAL_QUEUE: ${TYCHE_SIGNAL_QUEUE:-signal}
-      TYCHE_BOOT_CANDLES: ${TYCHE_BOOT_CANDLES:-300}
-      TYCHE_ROLL_INTERVAL_MS: ${TYCHE_ROLL_INTERVAL_MS:-5000}
-      TYCHE_DECISION_INTERVAL_MS: ${TYCHE_DECISION_INTERVAL_MS:-5000}
-      TYCHE_MONITOR_INTERVAL_MS: ${TYCHE_MONITOR_INTERVAL_MS:-5000}
-      TYCHE_INITIAL_CASH: ${TYCHE_INITIAL_CASH:-100000}
-      TYCHE_PAPER_FEE_BPS: ${TYCHE_PAPER_FEE_BPS:-0}
-      TYCHE_MIN_CONFIDENCE: ${TYCHE_MIN_CONFIDENCE:-0.70}
-      TYCHE_MAX_POSITIONS: ${TYCHE_MAX_POSITIONS:-5}
-      TYCHE_MAX_POSITION_FRACTION: ${TYCHE_MAX_POSITION_FRACTION:-0.15}
-      TYCHE_STOP_LOSS_PCT: ${TYCHE_STOP_LOSS_PCT:-0.05}
-      TYCHE_TAKE_PROFIT_PCT: ${TYCHE_TAKE_PROFIT_PCT:-0.10}
-      TYCHE_HOLD_MS: ${TYCHE_HOLD_MS:-86400000}
-      TYCHE_REBUY_COOLDOWN_MS: ${TYCHE_REBUY_COOLDOWN_MS:-300000}
-      TYCHE_KITE_API_KEY: ${TYCHE_KITE_API_KEY:-}
-      TYCHE_KITE_API_SECRET: ${TYCHE_KITE_API_SECRET:-}
-      TYCHE_KITE_ACCESS_TOKEN: ${TYCHE_KITE_ACCESS_TOKEN:-}
+      TYCHE_STATUS_ADDR: ":8080"
+    ports:
+      - "${TYCHE_STATUS_PORT:-8080}:8080"
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://127.0.0.1:8080/healthz"]
+      interval: 10s
+      timeout: 3s
+      retries: 6
+      start_period: 15s
     depends_on:
       redis:
         condition: service_healthy
       core:
         condition: service_healthy
 
-  monitoring-core:
-    build: ./monitoring/server
-    restart: unless-stopped
-    environment:
-      REDIS_URL: redis://redis:6379
-    depends_on:
-      redis:
-        condition: service_healthy
-    ports:
-      - "8082:8082"
-
-  monitoring-client:
+  dashboard:
     build: ./monitoring/client
+    restart: unless-stopped
     depends_on:
-      monitoring-core:
-        condition: service_started
+      gateway:
+        condition: service_healthy
     ports:
       - "5173:5173"
 

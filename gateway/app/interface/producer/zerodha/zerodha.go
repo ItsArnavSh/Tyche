@@ -386,25 +386,62 @@ func (p *Producer) waitTurn() {
 	p.mu.Unlock()
 }
 
-// SessionToken exchanges a request_token for an access_token.  Useful for the
-// login callback flow; the gateway normally receives TYCHE_KITE_ACCESS_TOKEN
-// from a session broker.
+// LoginURL is the one-time Kite Connect login URL used to obtain a request
+// token. It is served by the gateway CLI, not by the Java core.
+func LoginURL(apiKey string) string {
+	return "https://kite.trade/connect/login?api_key=" + url.QueryEscape(apiKey) + "&v=3"
+}
+
+// ExchangeSession exchanges a request_token for an access_token. This is the
+// operator-facing half of Kite authentication; it is intentionally kept in the
+// Go data plane alongside the producer.
+func ExchangeSession(baseURL, apiKey, apiSecret, requestToken string, timeout time.Duration) (string, error) {
+	if baseURL == "" {
+		baseURL = "https://api.kite.trade"
+	}
+	if timeout <= 0 {
+		timeout = 15 * time.Second
+	}
+	return exchangeSession(&http.Client{Timeout: timeout}, baseURL, apiKey, apiSecret, requestToken)
+}
+
+// SessionToken exchanges a request_token for an access_token and stores it on
+// the producer. Useful for the login callback flow; normal operation receives
+// TYCHE_KITE_ACCESS_TOKEN from the environment.
 func (p *Producer) SessionToken(requestToken string) (string, error) {
-	if p.apiSecret == "" {
+	token, err := exchangeSession(p.client, p.baseURL, p.apiKey, p.apiSecret, requestToken)
+	if err != nil {
+		return "", err
+	}
+	p.mu.Lock()
+	p.accessToken = token
+	p.mu.Unlock()
+	return token, nil
+}
+
+func exchangeSession(client *http.Client, baseURL, apiKey, apiSecret, requestToken string) (string, error) {
+	if apiKey == "" {
+		return "", fmt.Errorf("zerodha: API key is required to generate a session")
+	}
+	if apiSecret == "" {
 		return "", fmt.Errorf("zerodha: API secret is required to generate a session")
 	}
-	sum := sha256.Sum256([]byte(p.apiKey + requestToken + p.apiSecret))
+	if requestToken == "" {
+		return "", fmt.Errorf("zerodha: request token is required to generate a session")
+	}
+	baseURL = strings.TrimRight(baseURL, "/")
+	sum := sha256.Sum256([]byte(apiKey + requestToken + apiSecret))
 	form := url.Values{}
-	form.Set("api_key", p.apiKey)
+	form.Set("api_key", apiKey)
 	form.Set("request_token", requestToken)
 	form.Set("checksum", hex.EncodeToString(sum[:]))
-	req, err := http.NewRequest(http.MethodPost, p.baseURL+"/session/token", strings.NewReader(form.Encode()))
+	req, err := http.NewRequest(http.MethodPost, baseURL+"/session/token", strings.NewReader(form.Encode()))
 	if err != nil {
 		return "", err
 	}
 	req.Header.Set("X-Kite-Version", "3")
 	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
-	resp, err := p.client.Do(req)
+	resp, err := client.Do(req)
 	if err != nil {
 		return "", err
 	}
@@ -424,9 +461,6 @@ func (p *Producer) SessionToken(requestToken string) (string, error) {
 	if payload.Data.AccessToken == "" {
 		return "", fmt.Errorf("kite session response contained no access_token")
 	}
-	p.mu.Lock()
-	p.accessToken = payload.Data.AccessToken
-	p.mu.Unlock()
 	return payload.Data.AccessToken, nil
 }
 

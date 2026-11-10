@@ -65,6 +65,24 @@ public class LoadBalancer {
         }
     }
 
+    /**
+     * Makes a boot job eligible for the worker pool immediately. Boot data must
+     * not wait for the size timer: the gate is normally opened by the delay
+     * queue, but a re-boot has to be applied before the next roll can be
+     * accepted. The recurring timer is still started by {@link #set_boot_ticker}.
+     */
+    public void activate_boot(PriorityBlock ticker) {
+        if (ticker == null) {
+            return;
+        }
+        this.lock.lock();
+        try {
+            add_to_dict(ticker.name, ticker.size);
+        } finally {
+            this.lock.unlock();
+        }
+    }
+
     public void add_to_queue(PriorityBlock ticker) {
         if (ticker == null) {
             return;

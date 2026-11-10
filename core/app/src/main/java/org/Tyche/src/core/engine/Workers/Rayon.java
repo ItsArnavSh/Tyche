@@ -164,6 +164,7 @@ public class Rayon {
             PriorityBlock block = new PriorityBlock(size, name);
             this.stockHandler.stale_check(block);
             this.repo.cache.new_candles(block, candleSeries.candles);
+            this.loadBalancer.activate_boot(block);
             rollThese.add(block);
          }
       }

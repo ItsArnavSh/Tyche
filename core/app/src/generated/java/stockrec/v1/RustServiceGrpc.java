@@ -6,7 +6,7 @@ import static io.grpc.MethodDescriptor.generateFullMethodName;
  */
 @javax.annotation.Generated(
     value = "by gRPC proto compiler (version 1.68.1)",
-    comments = "Source: stockrec/stockrec.proto")
+    comments = "Source: stockrec.proto")
 @io.grpc.stub.annotations.GrpcGenerated
 public final class RustServiceGrpc {
 

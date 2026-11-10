@@ -5,13 +5,16 @@ PERIOD ?= 2y
 STRATEGY ?= sma
 CASH ?= 100000
 
-.PHONY: help build build-core build-gateway test test-java test-go test-python \
-	vet backtest run up down logs clean
+.PHONY: help build build-core build-gateway dashboard test test-java test-go \
+	test-python test-dashboard proto backtest run up down logs clean
 
 help:
 	@echo "Tyche targets:"
 	@echo "  make build        Build the Java core distribution and Go gateway"
 	@echo "  make test         Run Java, Go (race) and Python test suites"
+	@echo "  make test-dashboard  Type-check and build the Svelte dashboard"
+	@echo "  make proto        Regenerate Go and Java stubs from gateway/proto/stockrec.proto"
+	@echo "  make dashboard    Run the dashboard dev server (expects status API on :8080)"
 	@echo "  make backtest     Run a real-data backtest (SYMBOLS/PERIOD/STRATEGY/CASH)"
 	@echo "  make run          Run core + gateway locally (needs Redis on localhost)"
 	@echo "  make up / down    Start or stop the docker compose stack"
@@ -25,6 +28,9 @@ build-core:
 build-gateway:
 	cd gateway && mkdir -p bin && go build -o bin/tyche-gateway .
 
+dashboard:
+	cd monitoring/client && npm run dev
+
 test: test-java test-go test-python
 
 test-java:
@@ -35,6 +41,14 @@ test-go:
 
 test-python:
 	$(PYTHON) -m unittest discover -s backtest/tests -v
+
+test-dashboard:
+	cd monitoring/client && npm run check && npm run build
+
+proto:
+	command -v buf >/dev/null || { echo "buf is required: https://buf.build/docs/installation"; exit 1; }
+	cd gateway && buf generate
+	cd gateway && buf generate --template buf.gen.java.yaml -o ../core/app/src/generated/java
 
 backtest:
 	$(PYTHON) -m backtest --symbols "$(SYMBOLS)" --period "$(PERIOD)" \
@@ -64,3 +78,4 @@ logs:
 clean:
 	cd core && ./gradlew clean --no-daemon || true
 	rm -rf gateway/bin backtest/__pycache__ backtest/tests/__pycache__
+	rm -rf monitoring/client/.svelte-kit monitoring/client/build

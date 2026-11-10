@@ -45,6 +45,7 @@ type TransactionInstruction struct {
 	MaxVal     float64
 	SellAfter  time.Time
 	MinValSell float64
+	OpenedAt   time.Time
 }
 type BudgetModification struct {
 	Amount   float64

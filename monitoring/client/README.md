@@ -1,42 +1,32 @@
-# sv
+# Tyche Dashboard
 
-Everything you need to build a Svelte project, powered by [`sv`](https://github.com/sveltejs/cli).
+SvelteKit + Tailwind live console for the Go gateway status API. It renders:
 
-## Creating a project
+- paper equity, cash, PnL and win rate
+- open positions marked from the live feed
+- recent BUY/SELL decisions and fills
+- closed round trips
+- system health, market watch and latest signals
 
-If you're seeing this, you've probably already done this step. Congrats!
+The gateway is the only data source. There is no Deno/Node monitoring server.
 
-```sh
-# create a new project
-npx sv create my-app
-```
+## Development
 
-To recreate this project with the same configuration:
-
-```sh
-# recreate this project
-bun x sv@0.14.1 create --template minimal --types ts --add prettier tailwindcss="plugins:none" --install bun .
-```
-
-## Developing
-
-Once you've created a project and installed dependencies with `npm install` (or `pnpm install` or `yarn`), start a development server:
-
-```sh
+```bash
+npm install
 npm run dev
-
-# or start the server and open the app in a new browser tab
-npm run dev -- --open
 ```
 
-## Building
+By default the page polls `http://<current-host>:8080/api/status`. Override it
+with a query parameter if needed:
 
-To create a production version of your app:
+```text
+http://localhost:5173/?api=http://gateway-host:8080/api/status
+```
 
-```sh
+## Checks
+
+```bash
+npm run check
 npm run build
 ```
-
-You can preview the production build with `npm run preview`.
-
-> To deploy your app, you may need to install an [adapter](https://svelte.dev/docs/kit/adapters) for your target environment.

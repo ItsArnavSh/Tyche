@@ -1,0 +1,8 @@
+version: v2
+# Generate the committed Java stubs used by the strategy core:
+#   cd gateway && buf generate --template buf.gen.java.yaml -o ../core/app/src/generated/java
+plugins:
+  - remote: buf.build/protocolbuffers/java:v25.3
+    out: .
+  - remote: buf.build/grpc/java:v1.68.1
+    out: .

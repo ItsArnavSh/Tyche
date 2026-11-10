@@ -14,26 +14,29 @@ import (
 	"gateway/app/interface/producer"
 	"gateway/app/internal/grpc"
 	messagebroker "gateway/app/internal/msgbroker"
+	"gateway/app/status"
 	"gateway/app/util/bucket"
 	"gateway/app/util/entity"
-	"gateway/app/util/transaction"
+	"gateway/app/util/transaction/paper"
 )
 
 type Server struct {
-	cfg         config.Config
-	grpc        *grpc.GrpcClient
-	broker      *messagebroker.RedisQueue
-	monitor     *monitor.TradeMonitor
-	decision    *decision.DecisionLayer
-	transaction transaction.TransactionHandler
-	bucket      *bucket.Bucket
-	producer    producer.Producer
-	signals     chan entity.Signal
-	tradeIface  *producer.TradeInterface
+	cfg        config.Config
+	grpc       *grpc.GrpcClient
+	broker     *messagebroker.RedisQueue
+	monitor    *monitor.TradeMonitor
+	decision   *decision.DecisionLayer
+	ledger     *paper.PaperTrade
+	bucket     *bucket.Bucket
+	producer   producer.Producer
+	signals    chan entity.Signal
+	tradeIface *producer.TradeInterface
+	status     *status.Store
+	statusHTTP *status.HTTPServer
 }
 
 func NewServer(ctx context.Context, cfg config.Config) (*Server, error) {
-	s := &Server{cfg: cfg}
+	s := &Server{cfg: cfg, status: status.NewStore()}
 
 	var err error
 	if s.grpc, err = grpc.NewGrpcClient(ctx, cfg.CoreAddr); err != nil {
@@ -53,28 +56,29 @@ func NewServer(ctx context.Context, cfg config.Config) (*Server, error) {
 		s.grpc.Close()
 		return nil, fmt.Errorf("init producer: %w", err)
 	}
-	if s.transaction, err = transaction.NewTransactionHandler(cfg.InitialCash, cfg.PaperFeeBPS); err != nil {
-		s.producer.Close()
-		s.broker.Close()
-		s.grpc.Close()
-		return nil, fmt.Errorf("init transaction handler: %w", err)
-	}
 
+	s.ledger = paper.NewPaperTradeWithFees(cfg.InitialCash, cfg.PaperFeeBPS)
 	s.bucket = bucket.NewBucket(s.producer)
-	s.monitor = monitor.NewTradeMonitorWithInterval(s.transaction, s.bucket, cfg.MonitorEvery)
+	s.monitor = monitor.NewTradeMonitorWithInterval(
+		s.ledger, s.bucket, cfg.MonitorEvery, s.status,
+	)
 	s.signals = make(chan entity.Signal, 1024)
-	tradeInterface := producer.NewTradeInterface(s.grpc, s.producer)
+	s.tradeIface = producer.NewTradeInterface(s.grpc, s.producer, s.status)
 	s.decision = decision.NewDecisionLayer(
-		s.transaction,
+		s.ledger,
 		s.bucket,
 		s.signals,
 		s.monitor,
-		decision.Options{Settings: cfg.Decision, Interval: cfg.DecisionEvery},
+		decision.Options{
+			Settings: cfg.Decision,
+			Interval: cfg.DecisionEvery,
+			Recorder: s.status,
+		},
 	)
-	s.tradeIface = tradeInterface
+	s.statusHTTP = status.NewHTTPServer(cfg.StatusAddr, s.StatusSnapshot)
 
-	log.Printf("[server] data source=%s symbols=%d cash=%.2f core=%s redis=%s",
-		cfg.DataSource, len(cfg.Symbols), cfg.InitialCash, cfg.CoreAddr, cfg.RedisAddr)
+	log.Printf("[server] data source=%s symbols=%d cash=%.2f core=%s redis=%s status=%s",
+		cfg.DataSource, len(cfg.Symbols), cfg.InitialCash, cfg.CoreAddr, cfg.RedisAddr, cfg.StatusAddr)
 	return s, nil
 }
 
@@ -98,6 +102,12 @@ func (s *Server) BootServer(ctx context.Context) error {
 		}()
 	}
 
+	start("status-api", func() {
+		if err := s.statusHTTP.Run(ctx); err != nil {
+			s.status.RecordError("status-api", err)
+			log.Printf("[status] server failed: %v", err)
+		}
+	})
 	start("message-broker", func() { s.broker.Poll(ctx, s.signals) })
 	start("signal-poller", func() { s.decision.StartSignalPoller(ctx) })
 	start("decision-making", func() { s.decision.StartDecisionMaking(ctx) })

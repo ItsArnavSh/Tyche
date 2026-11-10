@@ -2,6 +2,7 @@ package bucket
 
 import (
 	"fmt"
+	"sort"
 	"sync"
 	"time"
 
@@ -199,6 +200,52 @@ func (b *Bucket) Size() int {
 	b.mu.RLock()
 	defer b.mu.RUnlock()
 	return len(b.Signals)
+}
+
+// SignalState is an immutable per-ticker view used by the status API.
+type SignalState struct {
+	Name                string
+	AggregateConfidence float64
+	PeakConfidence      float64
+	Signals             []entity.Signal
+}
+
+// Snapshot returns the live signal state for every ticker, strongest first.
+// Expired signals are pruned as part of the snapshot.
+func (b *Bucket) Snapshot() []SignalState {
+	now := time.Now()
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	out := make([]SignalState, 0, len(b.Signals))
+	for name, strategies := range b.Signals {
+		aggregate, peak := b.confidenceStatsLocked(name, strategies, now)
+		signals := make([]entity.Signal, 0, len(strategies))
+		for _, signal := range strategies {
+			signals = append(signals, signal)
+		}
+		if len(signals) == 0 {
+			continue
+		}
+		sort.Slice(signals, func(i, j int) bool {
+			if signals[i].Strategy == signals[j].Strategy {
+				return signals[i].Time.Before(signals[j].Time)
+			}
+			return signals[i].Strategy < signals[j].Strategy
+		})
+		out = append(out, SignalState{
+			Name:                name,
+			AggregateConfidence: aggregate,
+			PeakConfidence:      peak,
+			Signals:             signals,
+		})
+	}
+	sort.Slice(out, func(i, j int) bool {
+		if out[i].AggregateConfidence == out[j].AggregateConfidence {
+			return out[i].Name < out[j].Name
+		}
+		return out[i].AggregateConfidence > out[j].AggregateConfidence
+	})
+	return out
 }
 
 // Reset clears all signals (useful for tests and kill switches).

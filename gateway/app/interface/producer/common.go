@@ -3,25 +3,33 @@ package producer
 import (
 	"context"
 	"log"
+	"sort"
 	"sync"
 	"time"
 
 	"gateway/app/internal/grpc"
+	"gateway/app/status"
 	"gateway/app/util/entity"
 )
 
 // TradeInterface pumps market data from a Producer into the Java core.
 type TradeInterface struct {
-	lock    sync.Mutex
-	client  *grpc.GrpcClient
-	prod    Producer
-	request []entity.MonoCandle
+	lock     sync.Mutex
+	client   *grpc.GrpcClient
+	prod     Producer
+	recorder status.Recorder
+	request  []entity.MonoCandle
 }
 
-func NewTradeInterface(client *grpc.GrpcClient, prod Producer) *TradeInterface {
+func NewTradeInterface(client *grpc.GrpcClient, prod Producer, recorders ...status.Recorder) *TradeInterface {
+	var recorder status.Recorder
+	if len(recorders) > 0 {
+		recorder = recorders[0]
+	}
 	return &TradeInterface{
-		client: client,
-		prod:   prod,
+		client:   client,
+		prod:     prod,
+		recorder: recorder,
 	}
 }
 
@@ -60,9 +68,19 @@ func (t *TradeInterface) IllDoTheTalking(ctx context.Context) {
 			}
 			missing, err := t.client.SendRollData(ctx, latest)
 			if err != nil {
+				t.recordRoll(status.RollEvent{
+					At: time.Now(), Updates: len(latest), Failed: true, ErrorMsg: err.Error(),
+				})
+				t.recordError("roll", err)
 				log.Printf("[TradeInterface] roll send failed: %v", err)
 				continue
 			}
+			t.recordRoll(status.RollEvent{
+				At:      time.Now(),
+				Updates: len(latest),
+				Missing: len(missing),
+				Tickers: monoCandleNames(missing),
+			})
 			if len(missing) == 0 {
 				continue
 			}
@@ -84,9 +102,12 @@ func (t *TradeInterface) boot(ctx context.Context, req []entity.MonoCandle) {
 		return
 	}
 	if err := t.client.SendBootRequest(ctx, histories); err != nil {
+		t.recordRoll(status.RollEvent{At: time.Now(), Updates: len(histories), Boot: true, Failed: true, ErrorMsg: err.Error()})
+		t.recordError("boot", err)
 		log.Printf("[TradeInterface] boot send failed: %v", err)
 		return
 	}
+	t.recordRoll(status.RollEvent{At: time.Now(), Updates: len(histories), Boot: true})
 	log.Printf("[TradeInterface] booted %d series for %d jobs", len(histories), len(req))
 }
 
@@ -94,7 +115,11 @@ func (t *TradeInterface) reboot(ctx context.Context, missing []entity.MonoCandle
 	histories := t.prod.BootRequest(missing)
 	if len(histories) > 0 {
 		if err := t.client.SendBootRequest(ctx, histories); err != nil {
+			t.recordRoll(status.RollEvent{At: time.Now(), Updates: len(histories), Boot: true, Failed: true, ErrorMsg: err.Error()})
+			t.recordError("re-boot", err)
 			log.Printf("[TradeInterface] re-boot send failed: %v", err)
+		} else {
+			t.recordRoll(status.RollEvent{At: time.Now(), Updates: len(histories), Boot: true})
 		}
 	}
 	t.lock.Lock()
@@ -104,6 +129,32 @@ func (t *TradeInterface) reboot(ctx context.Context, missing []entity.MonoCandle
 			t.request = append(t.request, item)
 		}
 	}
+}
+
+func (t *TradeInterface) recordRoll(roll status.RollEvent) {
+	if t.recorder != nil {
+		t.recorder.RecordRoll(roll)
+	}
+}
+
+func (t *TradeInterface) recordError(scope string, err error) {
+	if t.recorder != nil {
+		t.recorder.RecordError(scope, err)
+	}
+}
+
+func monoCandleNames(items []entity.MonoCandle) []string {
+	out := make([]string, 0, len(items))
+	seen := make(map[string]struct{}, len(items))
+	for _, item := range items {
+		if _, ok := seen[item.Name]; ok {
+			continue
+		}
+		seen[item.Name] = struct{}{}
+		out = append(out, item.Name)
+	}
+	sort.Strings(out)
+	return out
 }
 
 func contains(items []entity.MonoCandle, target entity.MonoCandle) bool {

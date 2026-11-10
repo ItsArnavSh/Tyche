@@ -4,10 +4,10 @@ import java.util.ArrayList;
 import java.util.List;
 
 import org.Tyche.Config;
+import org.Tyche.src.core.engine.GatewayBoundary;
+import org.Tyche.src.entity.Blocks.Candle;
 import org.Tyche.src.entity.CandleSize;
 import org.Tyche.src.entity.CoreAPI;
-import org.Tyche.src.core.producer.StockInterface;
-import org.Tyche.src.entity.Blocks.Candle;
 import org.Tyche.src.entity.CoreAPI.RollRequest;
 import org.Tyche.src.server.Server;
 
@@ -22,10 +22,7 @@ import stockrec.v1.Stockrec.*;
 public class GRPC {
     private static final Logger logger = LoggerFactory.getLogger(GRPC.class);
 
-    StockInterface stockapi;
-
-    public GRPC(StockInterface stockapi) {
-        this.stockapi = stockapi;
+    private GRPC() {
     }
 
     public static void start(Server server) throws Exception {
@@ -40,15 +37,15 @@ public class GRPC {
     }
 
     static class RustServiceImpl extends RustServiceGrpc.RustServiceImplBase {
-        private final StockInterface stockapi;
+        private final GatewayBoundary gateway;
 
         RustServiceImpl(Server server) {
-            this(server.stockapi);
+            this(server.boundary);
         }
 
-        /** Visible for tests: allows injecting a fake producer boundary. */
-        RustServiceImpl(StockInterface stockapi) {
-            this.stockapi = stockapi;
+        /** Visible for tests: allows injecting a fake gateway boundary. */
+        RustServiceImpl(GatewayBoundary gateway) {
+            this.gateway = gateway;
         }
 
         @Override
@@ -72,7 +69,7 @@ public class GRPC {
                     rreq.update.add(su);
                 }
 
-                var missing = stockapi.PushLatestVals(rreq);
+                var missing = gateway.PushLatestVals(rreq);
                 ArrayList<StockSeries> ser = new ArrayList<>();
                 for (var mis : missing) {
                     StockSeries stockInfo = StockSeries.newBuilder().setName(mis.name)
@@ -114,7 +111,7 @@ public class GRPC {
                     breq.history.add(th);
                 }
 
-                stockapi.PushHistoricalVals(breq);
+                gateway.PushHistoricalVals(breq);
                 responseObserver.onNext(SendBootSignalResponse.newBuilder().build());
                 responseObserver.onCompleted();
             } catch (Exception e) {
@@ -128,7 +125,7 @@ public class GRPC {
                 StreamObserver<SendKillSignalResponse> responseObserver) {
             try {
                 List<String> names = request.getNameList();
-                stockapi.PushKillSignal(names);
+                gateway.PushKillSignal(names);
                 responseObserver.onNext(SendKillSignalResponse.newBuilder().build());
                 responseObserver.onCompleted();
             } catch (Exception e) {

@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"google.golang.org/grpc"
+	"google.golang.org/grpc/connectivity"
 	"google.golang.org/grpc/credentials/insecure"
 )
 
@@ -57,6 +58,16 @@ func NewGrpcClient(ctx context.Context, addr string) (*GrpcClient, error) {
 
 func (g *GrpcClient) Client() pb.RustServiceClient {
 	return g.client
+}
+
+// Connected reports whether the gRPC channel is currently ready. gRPC
+// reconnects automatically, so this can flip back to true after a core
+// restart without rebuilding the gateway.
+func (g *GrpcClient) Connected() bool {
+	if g.conn == nil {
+		return false
+	}
+	return g.conn.GetState() == connectivity.Ready
 }
 
 func (g *GrpcClient) Close() error {

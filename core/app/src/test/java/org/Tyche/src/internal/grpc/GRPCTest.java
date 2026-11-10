@@ -9,7 +9,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 import java.util.ArrayList;
 import java.util.List;
 
-import org.Tyche.src.core.producer.StockInterface;
+import org.Tyche.src.core.engine.GatewayBoundary;
 import org.Tyche.src.entity.Blocks.Candle;
 import org.Tyche.src.entity.CoreAPI.BootRequest;
 import org.Tyche.src.entity.CoreAPI.RollRequest;
@@ -55,15 +55,15 @@ class GRPCTest {
         }
     }
 
-    private static final class FakeStockInterface extends StockInterface {
+    private static final class FakeGatewayBoundary extends GatewayBoundary {
         BootRequest bootRequest;
         RollRequest rollRequest;
         List<String> killed;
         final ArrayList<PriorityBlock> missing = new ArrayList<>();
         RuntimeException failure;
 
-        FakeStockInterface() {
-            super(null, null);
+        FakeGatewayBoundary() {
+            super(null);
         }
 
         private void maybeFail() {
@@ -92,13 +92,13 @@ class GRPCTest {
         }
     }
 
-    private FakeStockInterface stockapi;
+    private FakeGatewayBoundary gateway;
     private GRPC.RustServiceImpl service;
 
     @BeforeEach
     void setUp() {
-        stockapi = new FakeStockInterface();
-        service = new GRPC.RustServiceImpl(stockapi);
+        gateway = new FakeGatewayBoundary();
+        service = new GRPC.RustServiceImpl(gateway);
     }
 
     private static StockValue value(float open, float high, float low, float close, double volume) {
@@ -123,9 +123,9 @@ class GRPCTest {
 
         assertNull(observer.error);
         assertTrue(observer.completed);
-        assertNotNull(stockapi.bootRequest);
-        assertEquals(1, stockapi.bootRequest.history.size());
-        var ticker = stockapi.bootRequest.history.get(0);
+        assertNotNull(gateway.bootRequest);
+        assertEquals(1, gateway.bootRequest.history.size());
+        var ticker = gateway.bootRequest.history.get(0);
         assertEquals("TCS", ticker.name);
         assertEquals(1, ticker.series.size());
         var series = ticker.series.get(0);
@@ -142,7 +142,7 @@ class GRPCTest {
 
     @Test
     void rollSignalConvertsValuesAndReturnsMissingTickers() {
-        stockapi.missing.add(new PriorityBlock(org.Tyche.src.entity.CandleSize.min15, "INFY"));
+        gateway.missing.add(new PriorityBlock(org.Tyche.src.entity.CandleSize.min15, "INFY"));
         StockUpdate update = StockUpdate.newBuilder()
                 .setName("TCS")
                 .addVals(LatestStockVals.newBuilder()
@@ -156,8 +156,8 @@ class GRPCTest {
 
         assertNull(observer.error);
         assertTrue(observer.completed);
-        assertEquals(1, stockapi.rollRequest.update.size());
-        var stock = stockapi.rollRequest.update.get(0);
+        assertEquals(1, gateway.rollRequest.update.size());
+        var stock = gateway.rollRequest.update.get(0);
         assertEquals("TCS", stock.name);
         assertEquals(1, stock.val.size());
         assertEquals(org.Tyche.src.entity.CandleSize.min1, stock.val.get(0).size);
@@ -180,12 +180,12 @@ class GRPCTest {
         assertNull(observer.error);
         assertTrue(observer.completed);
         assertNotNull(observer.value);
-        assertArrayEquals(new String[] { "TCS", "INFY" }, stockapi.killed.toArray());
+        assertArrayEquals(new String[] { "TCS", "INFY" }, gateway.killed.toArray());
     }
 
     @Test
     void failuresAreReportedAsInternalGrpcErrors() {
-        stockapi.failure = new IllegalStateException("boom");
+        gateway.failure = new IllegalStateException("boom");
         SendRollDataRequest request = SendRollDataRequest.newBuilder().build();
         CapturingObserver<SendRollDataResponse> observer = new CapturingObserver<>();
 
@@ -199,7 +199,7 @@ class GRPCTest {
 
     @Test
     void bootFailuresAreAlsoReported() {
-        stockapi.failure = new IllegalArgumentException("bad history");
+        gateway.failure = new IllegalArgumentException("bad history");
         SendBootSignalRequest request = SendBootSignalRequest.newBuilder().build();
         CapturingObserver<SendBootSignalResponse> observer = new CapturingObserver<>();
 
@@ -211,7 +211,7 @@ class GRPCTest {
 
     @Test
     void killFailuresAreAlsoReported() {
-        stockapi.failure = new IllegalStateException("cannot kill");
+        gateway.failure = new IllegalStateException("cannot kill");
         SendKillSignalRequest request = SendKillSignalRequest.newBuilder().addName("TCS").build();
         CapturingObserver<SendKillSignalResponse> observer = new CapturingObserver<>();
 

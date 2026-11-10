@@ -51,12 +51,13 @@ type Config struct {
 
 	InitialCash  float64
 	PaperFeeBPS  float64
+	StatusAddr   string
 	Decision     DecisionSettings
 	ShutdownWait time.Duration
 }
 
-// Default symbols mirror the Java core defaults so a fresh checkout trades a
-// liquid, well-known NSE universe without any configuration.
+// defaultSymbols is the single default universe. Ticker selection lives in the
+// Go data plane so the Java core never needs a symbol list.
 const defaultSymbols = "RELIANCE.NS,TCS.NS,HDFCBANK.NS,INFY.NS,ICICIBANK.NS,SBIN.NS,ITC.NS,LT.NS,BHARTIARTL.NS,HINDUNILVR.NS"
 
 // Load reads configuration from the process environment.
@@ -89,6 +90,7 @@ func Load() Config {
 
 		InitialCash: envFloat("TYCHE_INITIAL_CASH", 100_000),
 		PaperFeeBPS: envFloat("TYCHE_PAPER_FEE_BPS", 0),
+		StatusAddr:  env("TYCHE_STATUS_ADDR", ":8080"),
 		Decision: DecisionSettings{
 			MinConfidence:       envFloat("TYCHE_MIN_CONFIDENCE", 0.70),
 			MaxPositions:        envInt("TYCHE_MAX_POSITIONS", 5),
