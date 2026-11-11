@@ -265,6 +265,7 @@ The gateway reads market-data, execution, and status settings. The core reads on
 | `TYCHE_SYMBOLS` | empty | gateway | Explicit override; wins over `TYCHE_UNIVERSE` when set |
 | `TYCHE_BOOT_WORKERS` | `4` | gateway | Bounded parallel history downloads during boot |
 | `TYCHE_WORKER_THREADS` | available CPUs | core | Scheduler worker pool; raise for large universes |
+| `TYCHE_BOOT_GRACE_MS` | `300000` | core | Grace window for queued boot work before its roll data is treated as missing |
 | `TYCHE_CACHE_MAX_CANDLES` | `1500` | core | Per-(symbol, timeframe) candle cache cap |
 | `TYCHE_CORE_ADDR` | `localhost:50051` | gateway | Java gRPC address |
 | `TYCHE_REDIS_ADDR` | `localhost:6379` | gateway | Redis address |
@@ -273,6 +274,9 @@ The gateway reads market-data, execution, and status settings. The core reads on
 | `TYCHE_SIGNAL_QUEUE` | `signal` | gateway + core | Redis list used for signals |
 | `TYCHE_BOOT_CANDLES` | `300` | gateway | Historical bars requested per series |
 | `TYCHE_ROLL_INTERVAL_MS` | `5000` | gateway | Latest-price poll interval |
+| `TYCHE_REBOOT_BACKOFF_MS` | `10000` | gateway | Initial retry delay after a failed series boot |
+| `TYCHE_REBOOT_MAX_BACKOFF_MS` | `120000` | gateway | Maximum exponential retry delay |
+| `TYCHE_REBOOT_MAX_ATTEMPTS` | `0` | gateway | Attempt cap for transient boot failures; `0` retries indefinitely. Permanent HTTP 4xx failures are blacklisted immediately |
 | `TYCHE_STATUS_ADDR` | `:8080` | gateway | Status API listen address (Compose fixes this at `:8080`) |
 | `TYCHE_STATUS_PORT` | `8080` | Compose | Host port mapped to the status API |
 | `TYCHE_INITIAL_CASH` | `100000` | gateway | Paper account starting cash |

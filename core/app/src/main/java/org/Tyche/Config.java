@@ -29,6 +29,12 @@ public final class Config {
     public static final int WORKER_THREADS = envInt("TYCHE_WORKER_THREADS",
             Runtime.getRuntime().availableProcessors());
     public static final double STALE_MULTIPLIER = envDouble("TYCHE_STALE_MULTIPLIER", 2.0);
+    /**
+     * How long a freshly queued boot may take before its series is considered
+     * missing. Boot jobs can sit in the scheduler behind a large universe, so
+     * they must not be declared stale on the normal candle-size window.
+     */
+    public static final long BOOT_GRACE_MILLIS = envLong("TYCHE_BOOT_GRACE_MS", 300_000L);
 
     // ── Signals ─────────────────────────────────────────────────────────
     /** Minimum time between two signals for the same strategy/ticker. */

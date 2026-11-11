@@ -22,6 +22,14 @@ type Producer interface {
 	Close() error
 }
 
+// PermanentBootFailureReporter is an optional producer capability. Producers
+// that can distinguish a delisted/unknown symbol from a transient HTTP or
+// network failure implement it so the gateway can blacklist the series instead
+// of retrying it forever.
+type PermanentBootFailureReporter interface {
+	PermanentBootFailure(name string, size entity.CandleSize) bool
+}
+
 var _ Producer = &fakeval.FakeValGen{}
 
 // NewProducer selects the configured data source.

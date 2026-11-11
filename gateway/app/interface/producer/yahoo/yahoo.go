@@ -2,6 +2,7 @@ package yahoo
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"log"
@@ -35,18 +36,19 @@ type Options struct {
 // come from the batched /v8/finance/spark endpoint; requests are chunked so a
 // large NIFTY 500 universe does not put hundreds of tickers in one URL.
 type Producer struct {
-	mu          sync.RWMutex
-	symbols     []string
-	baseURL     string
-	suffix      string
-	retries     int
-	bootCandles int
-	bootWorkers int
-	rollEvery   time.Duration
-	client      *http.Client
-	latest      map[string]float64
-	lastRoll    time.Time
-	lastQuote   map[string]time.Time
+	mu           sync.RWMutex
+	symbols      []string
+	baseURL      string
+	suffix       string
+	retries      int
+	bootCandles  int
+	bootWorkers  int
+	rollEvery    time.Duration
+	client       *http.Client
+	latest       map[string]float64
+	lastRoll     time.Time
+	lastQuote    map[string]time.Time
+	bootFailures map[string]map[string]bool
 
 	sparkFailures int
 }
@@ -90,16 +92,17 @@ func New(opts Options) *Producer {
 		symbols = []string{"RELIANCE.NS"}
 	}
 	return &Producer{
-		symbols:     symbols,
-		baseURL:     strings.TrimRight(opts.BaseURL, "/"),
-		suffix:      opts.Suffix,
-		retries:     opts.Retries,
-		bootCandles: opts.BootCandles,
-		bootWorkers: opts.BootWorkers,
-		rollEvery:   opts.RollEvery,
-		client:      client,
-		latest:      make(map[string]float64),
-		lastQuote:   make(map[string]time.Time),
+		symbols:      symbols,
+		baseURL:      strings.TrimRight(opts.BaseURL, "/"),
+		suffix:       opts.Suffix,
+		retries:      opts.Retries,
+		bootCandles:  opts.BootCandles,
+		bootWorkers:  opts.BootWorkers,
+		rollEvery:    opts.RollEvery,
+		client:       client,
+		latest:       make(map[string]float64),
+		lastQuote:    make(map[string]time.Time),
+		bootFailures: make(map[string]map[string]bool),
 	}
 }
 
@@ -115,6 +118,34 @@ func (p *Producer) GetCurrentValue(name string) float64 {
 	p.mu.RLock()
 	defer p.mu.RUnlock()
 	return p.latest[name]
+}
+
+// PermanentBootFailure reports a known-bad symbol/interval pair. It is only
+// consulted after a boot fetch produced no history, so a successful history
+// always wins over a stale error marker.
+func (p *Producer) PermanentBootFailure(name string, size entity.CandleSize) bool {
+	p.mu.RLock()
+	defer p.mu.RUnlock()
+	return p.bootFailures[name][intervalFor(size)]
+}
+
+func (p *Producer) recordBootFailure(name, interval string, permanent bool) {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	if p.bootFailures == nil {
+		p.bootFailures = make(map[string]map[string]bool)
+	}
+	if !permanent {
+		delete(p.bootFailures[name], interval)
+		if len(p.bootFailures[name]) == 0 {
+			delete(p.bootFailures, name)
+		}
+		return
+	}
+	if p.bootFailures[name] == nil {
+		p.bootFailures[name] = make(map[string]bool)
+	}
+	p.bootFailures[name][interval] = true
 }
 
 func (p *Producer) BootRequest(req []entity.MonoCandle) []entity.TickerHistory {
@@ -316,6 +347,24 @@ func (p *Producer) fetchSparkChunk(names []string) error {
 	return nil
 }
 
+type httpStatusError struct {
+	status int
+	body   string
+}
+
+func (e *httpStatusError) Error() string {
+	return fmt.Sprintf("yahoo HTTP %d: %s", e.status, e.body)
+}
+
+func (e *httpStatusError) permanent() bool {
+	switch e.status {
+	case http.StatusBadRequest, http.StatusNotFound, http.StatusGone:
+		return true
+	default:
+		return false
+	}
+}
+
 type chartResponse struct {
 	Chart struct {
 		Result []struct {
@@ -361,8 +410,12 @@ func (p *Producer) fetchChart(name, interval, chartRange string) ([]entity.Candl
 		p.baseURL, symbol, interval, chartRange)
 	body, err := p.get(endpoint)
 	if err != nil {
+		var httpErr *httpStatusError
+		permanent := errors.As(err, &httpErr) && httpErr.permanent()
+		p.recordBootFailure(name, interval, permanent)
 		return nil, err
 	}
+	p.recordBootFailure(name, interval, false)
 	var payload chartResponse
 	if err := json.Unmarshal(body, &payload); err != nil {
 		return nil, fmt.Errorf("decode chart: %w", err)
@@ -429,7 +482,10 @@ func (p *Producer) get(endpoint string) ([]byte, error) {
 			} else if resp.StatusCode == http.StatusTooManyRequests || resp.StatusCode >= 500 {
 				lastErr = fmt.Errorf("yahoo HTTP %d", resp.StatusCode)
 			} else {
-				return nil, fmt.Errorf("yahoo HTTP %d: %s", resp.StatusCode, truncate(string(body), 200))
+				return nil, &httpStatusError{
+					status: resp.StatusCode,
+					body:   truncate(string(body), 200),
+				}
 			}
 		}
 		if attempt+1 < p.retries {

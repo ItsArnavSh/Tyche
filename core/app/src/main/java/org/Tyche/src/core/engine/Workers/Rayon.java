@@ -162,7 +162,7 @@ public class Rayon {
          for (var candleSeries : stockHistory.series) {
             var size = candleSeries.size;
             PriorityBlock block = new PriorityBlock(size, name);
-            this.stockHandler.stale_check(block);
+            this.stockHandler.mark_booting(block);
             this.repo.cache.new_candles(block, candleSeries.candles);
             this.loadBalancer.activate_boot(block);
             rollThese.add(block);

@@ -92,9 +92,18 @@
 		last_roll_updates: number;
 		missing: number;
 		missing_tickers: string[];
+		missing_series: string[];
 		last_roll_error?: string;
 		last_error?: string;
 		last_error_scope?: string;
+		last_reboot_at?: string;
+		reboot_attempts: number;
+		reboot_succeeded: number;
+		reboot_failed: number;
+		reboot_in_flight: number;
+		reboot_pending: number;
+		reboot_permanent: number;
+		reboot_permanent_series: string[];
 	}
 
 	interface Stats {
@@ -783,7 +792,43 @@
 									<p class="text-white/25">roll interval</p>
 									<p class="mt-0.5 tabular-nums text-white/55">{feed ? `${(feed.roll_interval_ms / 1000).toFixed(0)}s` : '—'}</p>
 								</div>
+								<div>
+									<p class="text-white/25">re-boots</p>
+									<p class="mt-0.5 tabular-nums text-white/55">{feed?.reboot_attempts ?? 0}</p>
+								</div>
+								<div class="text-right">
+									<p class="text-white/25">retry queue</p>
+									<p
+										class="mt-0.5 tabular-nums {feed?.reboot_permanent
+											? 'text-rose-300'
+											: feed?.reboot_in_flight || feed?.reboot_pending
+												? 'text-amber-300'
+												: 'text-white/55'}"
+									>
+										{feed?.reboot_in_flight ?? 0} / {feed?.reboot_pending ?? 0}
+									</p>
+								</div>
 							</div>
+							{#if feed?.missing_series?.length || feed?.reboot_permanent_series?.length}
+								<div class="mt-2 space-y-1 rounded-lg border border-amber-400/15 bg-amber-400/[0.04] px-2.5 py-2 text-[10px] text-amber-100/70">
+									{#if feed?.missing_series?.length}
+										<p>
+											<span class="font-medium text-amber-200/90">missing</span>
+											{feed.missing_series.slice(0, 4).join(', ')}{feed.missing_series.length > 4
+												? ` +${feed.missing_series.length - 4}`
+												: ''}
+										</p>
+									{/if}
+									{#if feed?.reboot_permanent_series?.length}
+										<p>
+											<span class="font-medium text-rose-200/90">blacklisted</span>
+											{feed.reboot_permanent_series.slice(0, 4).join(', ')}{feed.reboot_permanent_series.length > 4
+												? ` +${feed.reboot_permanent_series.length - 4}`
+												: ''}
+										</p>
+									{/if}
+								</div>
+							{/if}
 							{#if feed?.last_roll_error || feed?.last_error}
 								<div class="mt-2 rounded-lg border border-rose-400/15 bg-rose-400/[0.05] px-2.5 py-2 text-[10px] text-rose-200/70">
 									<p class="font-medium text-rose-200/90">{feed?.last_error_scope ?? 'feed'} error</p>

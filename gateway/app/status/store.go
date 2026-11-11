@@ -27,6 +27,7 @@ type Recorder interface {
 	RecordOrder(entity.TransactionInstruction, string, error)
 	RecordClosedTrade(ClosedTrade)
 	RecordRoll(RollEvent)
+	RecordReboot(RebootEvent)
 	RecordError(scope string, err error)
 }
 
@@ -74,9 +75,23 @@ type RollEvent struct {
 	Updates  int
 	Missing  int
 	Tickers  []string
+	Series   []string
 	Boot     bool
 	Failed   bool
 	ErrorMsg string
+}
+
+// RebootEvent reports one re-boot worker transition. Attempted/Succeeded/
+// Failed describe the batch that just finished; InFlight/Pending/Permanent
+// describe the current queue. A state-only event has Attempted == 0.
+type RebootEvent struct {
+	At        time.Time
+	Attempted int
+	Succeeded int
+	Failed    int
+	InFlight  int
+	Pending   int
+	Permanent []string
 }
 
 // ErrorEvent is a bounded diagnostic entry.
@@ -102,10 +117,20 @@ type Health struct {
 	LastRollUpdates int
 	Missing         int
 	MissingTickers  []string
+	MissingSeries   []string
 	LastRollError   string
 	LastErrorScope  string
 	LastError       string
 	LastErrorAt     time.Time
+
+	LastRebootAt          time.Time
+	RebootAttempts        int64
+	RebootSucceeded       int64
+	RebootFailed          int64
+	RebootInFlight        int
+	RebootPending         int
+	RebootPermanent       int
+	RebootPermanentSeries []string
 }
 
 // Activity is an immutable copy of the in-memory event log.
@@ -227,12 +252,32 @@ func (s *Store) RecordRoll(roll RollEvent) {
 		s.activity.Health.LastRollUpdates = roll.Updates
 		s.activity.Health.Missing = roll.Missing
 		s.activity.Health.MissingTickers = append([]string{}, roll.Tickers...)
+		s.activity.Health.MissingSeries = append([]string{}, roll.Series...)
 	}
 	if roll.Failed {
 		s.activity.Health.LastRollError = roll.ErrorMsg
 	} else if !roll.Boot {
 		s.activity.Health.LastRollError = ""
 	}
+}
+
+func (s *Store) RecordReboot(reboot RebootEvent) {
+	at := reboot.At
+	if at.IsZero() {
+		at = time.Now()
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if reboot.Attempted > 0 || reboot.InFlight > 0 {
+		s.activity.Health.LastRebootAt = at
+	}
+	s.activity.Health.RebootAttempts += int64(reboot.Attempted)
+	s.activity.Health.RebootSucceeded += int64(reboot.Succeeded)
+	s.activity.Health.RebootFailed += int64(reboot.Failed)
+	s.activity.Health.RebootInFlight = reboot.InFlight
+	s.activity.Health.RebootPending = reboot.Pending
+	s.activity.Health.RebootPermanent = len(reboot.Permanent)
+	s.activity.Health.RebootPermanentSeries = append([]string{}, reboot.Permanent...)
 }
 
 func (s *Store) RecordError(scope string, err error) {
@@ -262,6 +307,8 @@ func (s *Store) Activity() Activity {
 		Health:       s.activity.Health,
 	}
 	out.Health.MissingTickers = append([]string{}, s.activity.Health.MissingTickers...)
+	out.Health.MissingSeries = append([]string{}, s.activity.Health.MissingSeries...)
+	out.Health.RebootPermanentSeries = append([]string{}, s.activity.Health.RebootPermanentSeries...)
 	return out
 }
 

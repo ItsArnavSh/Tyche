@@ -82,9 +82,19 @@ type Feed struct {
 	LastRollUpdates int        `json:"last_roll_updates"`
 	Missing         int        `json:"missing"`
 	MissingTickers  []string   `json:"missing_tickers"`
+	MissingSeries   []string   `json:"missing_series,omitempty"`
 	LastRollError   string     `json:"last_roll_error,omitempty"`
 	LastError       string     `json:"last_error,omitempty"`
 	LastErrorScope  string     `json:"last_error_scope,omitempty"`
+
+	LastRebootAt          *time.Time `json:"last_reboot_at,omitempty"`
+	RebootAttempts        int64      `json:"reboot_attempts"`
+	RebootSucceeded       int64      `json:"reboot_succeeded"`
+	RebootFailed          int64      `json:"reboot_failed"`
+	RebootInFlight        int        `json:"reboot_in_flight"`
+	RebootPending         int        `json:"reboot_pending"`
+	RebootPermanent       int        `json:"reboot_permanent"`
+	RebootPermanentSeries []string   `json:"reboot_permanent_series,omitempty"`
 }
 
 // Stats aggregates event counters and monitor state.

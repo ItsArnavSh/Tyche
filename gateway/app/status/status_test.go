@@ -76,7 +76,11 @@ func TestStoreClosedTradeComputesDuration(t *testing.T) {
 
 func TestStoreRollHealth(t *testing.T) {
 	store := NewStore()
-	store.RecordRoll(RollEvent{At: time.Now(), Updates: 50, Missing: 2, Tickers: []string{"A", "B"}})
+	store.RecordRoll(RollEvent{
+		At: time.Now(), Updates: 50, Missing: 2,
+		Tickers: []string{"A", "B"},
+		Series:  []string{"A:min1", "B:hour1"},
+	})
 	store.RecordRoll(RollEvent{At: time.Now(), Updates: 10, Boot: true})
 	activity := store.Activity()
 	if activity.Health.LastRollUpdates != 50 || activity.Health.Missing != 2 {
@@ -85,11 +89,54 @@ func TestStoreRollHealth(t *testing.T) {
 	if len(activity.Health.MissingTickers) != 2 || activity.Health.LastBootAt.IsZero() {
 		t.Fatalf("roll details = %+v", activity.Health)
 	}
+	if len(activity.Health.MissingSeries) != 2 || activity.Health.MissingSeries[0] != "A:min1" {
+		t.Fatalf("missing series = %#v", activity.Health.MissingSeries)
+	}
 
 	store.RecordRoll(RollEvent{At: time.Now(), Updates: 50})
 	activity = store.Activity()
 	if activity.Health.MissingTickers == nil || len(activity.Health.MissingTickers) != 0 {
 		t.Fatalf("empty missing list = %#v", activity.Health.MissingTickers)
+	}
+	if activity.Health.MissingSeries == nil || len(activity.Health.MissingSeries) != 0 {
+		t.Fatalf("empty missing series = %#v", activity.Health.MissingSeries)
+	}
+}
+
+func TestStoreRebootHealth(t *testing.T) {
+	store := NewStore()
+	now := time.Now()
+	store.RecordReboot(RebootEvent{
+		At:        now,
+		Attempted: 4,
+		Succeeded: 3,
+		Failed:    1,
+		InFlight:  2,
+		Pending:   5,
+		Permanent: []string{"MISSING.NS:min1"},
+	})
+	activity := store.Activity()
+	if activity.Health.RebootAttempts != 4 || activity.Health.RebootSucceeded != 3 || activity.Health.RebootFailed != 1 {
+		t.Fatalf("reboot totals = %+v", activity.Health)
+	}
+	if activity.Health.RebootInFlight != 2 || activity.Health.RebootPending != 5 || activity.Health.RebootPermanent != 1 {
+		t.Fatalf("reboot queue = %+v", activity.Health)
+	}
+	if activity.Health.LastRebootAt.IsZero() {
+		t.Fatal("missing last reboot timestamp")
+	}
+	if len(activity.Health.RebootPermanentSeries) != 1 || activity.Health.RebootPermanentSeries[0] != "MISSING.NS:min1" {
+		t.Fatalf("permanent series = %#v", activity.Health.RebootPermanentSeries)
+	}
+
+	store.RecordReboot(RebootEvent{At: now, InFlight: 0, Pending: 0, Permanent: []string{"MISSING.NS:min1"}})
+	activity = store.Activity()
+	if activity.Health.RebootAttempts != 4 {
+		t.Fatalf("state-only event changed attempt total: %+v", activity.Health)
+	}
+	activity.Health.RebootPermanentSeries[0] = "mutated"
+	if store.Activity().Health.RebootPermanentSeries[0] != "MISSING.NS:min1" {
+		t.Fatal("reboot health returned aliased storage")
 	}
 }
 

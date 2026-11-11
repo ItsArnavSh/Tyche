@@ -32,6 +32,25 @@ public class StockHandler {
         return status == null || status.bootmode;
     }
 
+    /**
+     * Marks a series as booting as soon as its history is accepted by the
+     * data plane. Until the worker finishes the boot pipeline, roll updates
+     * for that series must be accepted instead of being reported missing.
+     */
+    void mark_booting(PriorityBlock ticker) {
+        if (ticker == null) {
+            return;
+        }
+        activeStocks.compute(ticker, (key, existing) -> {
+            if (existing == null) {
+                return new StockVal(timer.time_elapsed(), true);
+            }
+            existing.bootmode = true;
+            existing.time = timer.time_elapsed();
+            return existing;
+        });
+    }
+
     void mark_booted(PriorityBlock ticker) {
         if (ticker == null) {
             return;
@@ -49,6 +68,8 @@ public class StockHandler {
     /**
      * Returns true when a roll update cannot be applied because the ticker is
      * unknown or its last update is older than {@code size * STALE_MULTIPLIER}.
+     * A series that is still booting gets a grace window so queued boot work
+     * cannot race the next roll and trigger an endless re-boot loop.
      */
     boolean stale_check(PriorityBlock ticker) {
         if (ticker == null || ticker.size == null) {
@@ -60,6 +81,9 @@ public class StockHandler {
             return true;
         }
         long threshold = (long) (ticker.size.get_duration_millis() * Config.STALE_MULTIPLIER);
+        if (existing.bootmode) {
+            threshold = Math.max(threshold, Config.BOOT_GRACE_MILLIS);
+        }
         if (now - existing.time > threshold) {
             activeStocks.remove(ticker);
             return true;

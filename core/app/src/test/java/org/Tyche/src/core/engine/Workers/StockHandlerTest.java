@@ -58,6 +58,55 @@ class StockHandlerTest {
     }
 
     @Test
+    void bootingSeriesAcceptsRollsUntilBootCompletes() {
+        handler.mark_booting(TCS_MIN1);
+
+        assertTrue(handler.boot_check(TCS_MIN1));
+        assertFalse(handler.stale_check(TCS_MIN1), "a booting series must accept roll updates");
+
+        clock.advance(Config.BOOT_GRACE_MILLIS - 1);
+        assertFalse(handler.stale_check(TCS_MIN1));
+
+        clock.advance(2);
+        assertTrue(handler.stale_check(TCS_MIN1), "a boot that never completes eventually expires");
+        assertTrue(handler.boot_check(TCS_MIN1));
+        assertEquals(0, handler.active_count());
+    }
+
+    @Test
+    void repeatedBootDataRefreshesTheGraceWindow() {
+        handler.mark_booting(TCS_MIN1);
+        clock.advance(Config.BOOT_GRACE_MILLIS - 1);
+
+        handler.mark_booting(TCS_MIN1);
+        clock.advance(Config.BOOT_GRACE_MILLIS - 1);
+
+        assertFalse(handler.stale_check(TCS_MIN1));
+        assertTrue(handler.boot_check(TCS_MIN1));
+    }
+
+    @Test
+    void markingBootedClearsBootMode() {
+        handler.mark_booting(TCS_MIN1);
+        handler.mark_booted(TCS_MIN1);
+
+        assertFalse(handler.boot_check(TCS_MIN1));
+        clock.advance(staleThreshold);
+        assertFalse(handler.stale_check(TCS_MIN1));
+    }
+
+    @Test
+    void bootGraceDoesNotShortenLongTimeframeFreshness() {
+        PriorityBlock tcsMin15 = new PriorityBlock(CandleSize.min15, "TCS");
+        handler.mark_booting(tcsMin15);
+
+        clock.advance(Config.BOOT_GRACE_MILLIS + 1);
+
+        assertFalse(handler.stale_check(tcsMin15),
+                "hour-sized freshness must still win when it is longer than the boot grace");
+    }
+
+    @Test
     void dataBecomesStaleAfterThresholdAndIsDropped() {
         handler.mark_booted(TCS_MIN1);
         clock.advance(staleThreshold);

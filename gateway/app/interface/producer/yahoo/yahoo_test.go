@@ -78,6 +78,47 @@ func TestBootRequestParsesChart(t *testing.T) {
 	}
 }
 
+func TestBootRequestClassifiesUnknownSymbolAsPermanent(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Query().Get("interval") {
+		case "1m":
+			http.NotFound(w, r)
+		case "15m", "60m":
+			w.Header().Set("Content-Type", "application/json")
+			fmt.Fprint(w, chartPayload)
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	defer server.Close()
+
+	p := New(Options{
+		Symbols:     []string{"DUMMY.NS"},
+		BaseURL:     server.URL,
+		BootCandles: 10,
+		Retries:     1,
+		Timeout:     2 * time.Second,
+	})
+	histories := p.BootRequest([]entity.MonoCandle{
+		{Name: "DUMMY", Size: entity.SEC5},
+		{Name: "DUMMY", Size: entity.SEC30},
+		{Name: "DUMMY", Size: entity.MIN1},
+		{Name: "DUMMY", Size: entity.MIN15},
+		{Name: "DUMMY", Size: entity.HOUR1},
+	})
+	if len(histories) != 2 {
+		t.Fatalf("histories = %d, want the 15m and 60m series", len(histories))
+	}
+	for _, size := range []entity.CandleSize{entity.SEC5, entity.SEC30, entity.MIN1} {
+		if !p.PermanentBootFailure("DUMMY", size) {
+			t.Fatalf("1m HTTP 404 was not classified as permanent for %s", size)
+		}
+	}
+	if p.PermanentBootFailure("DUMMY", entity.MIN15) || p.PermanentBootFailure("DUMMY", entity.HOUR1) {
+		t.Fatal("successful intervals were marked as permanent failures")
+	}
+}
+
 func TestRollUsesBatchedSpark(t *testing.T) {
 	requests := 0
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
