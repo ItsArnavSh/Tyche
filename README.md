@@ -16,6 +16,8 @@ Tyche is a fully autonomous, real-time, distributed, load-balanced trading bot. 
 - **Cross-language boundary** — the single proto source lives in `gateway/proto/stockrec.proto`. Java stubs are generated from it and committed for clean-checkout builds.
 - **Live status API** — the Go gateway exposes an in-memory JSON snapshot of decisions, fills, cash, equity, open positions, closed trades, signals, and feed health. No separate monitoring service.
 - **Fair scheduling** — boot jobs pre-empt rolling jobs, rolling work is FIFO per priority, and a bounded per-ticker candle cache prevents memory growth.
+- **Large strategy library** — 90 registrations across five timeframes, grouped into trend, momentum, mean-reversion, breakout, volume, volatility, and price-action families. Every strategy shares one boot/roll lifecycle.
+- **Correlation-aware signals** — the gateway aggregates the strongest decayed signal per strategy family and adds a small consensus bonus, so five correlated trend signals cannot masquerade as five independent votes.
 - **Resilience** — HTTP retries, stale-ticker detection and re-boot, graceful shutdown, Redis-optional operation, and per-ticker failure isolation.
 - **Backtesting** — real Yahoo/yfinance/CSV data, five strategy families with parameter overrides, portfolio cash sharing, fees/slippage/stops/targets, and JSON/CSV exports.
 - **Tests** — JUnit 5 for the Java core, `go test -race` for the gateway, and `unittest` for the backtester.
@@ -52,7 +54,36 @@ The default universe is ten liquid NSE symbols, the default source is Yahoo, and
 
 ### Local development
 
-Requirements: Java 21, Go 1.25+, Node 20+, Python 3.10+, and Redis (for the full loop).
+Requirements: Java 21, Go 1.25+, Node 20+, Python 3.10+, tmux, and Redis (for the full loop).
+
+The one-command local stack starts Redis, the Java core, the Go gateway, and the Svelte dashboard in a single tmux session:
+
+```bash
+cp .env.example .env   # optional; the Makefile also works without it
+make tmux              # start and attach to session "tyche"
+make tmux-kill         # stop every window
+```
+
+`make tmux` loads `.env` in each window, reuses an existing Redis on `127.0.0.1:6379`, waits for Redis before starting the gateway, and attaches to an existing session instead of creating a duplicate. Set `TMUX_ATTACH=0` for noninteractive startup, or use `TMUX_SESSION=name` to isolate a second stack.
+
+### Real market data
+
+The default `.env.example` uses `TYCHE_DATA_SOURCE=yahoo`, so a normal local start consumes real NSE market data without any credentials:
+
+```bash
+cp .env.example .env
+make tmux
+```
+
+Check the feed and live watchlist:
+
+```bash
+curl -s http://localhost:8080/api/status | jq '.feed, .market'
+```
+
+Edit `TYCHE_SYMBOLS` in `.env` to change the watchlist. Use `.NS` for NSE and `.BO` for BSE symbols. All execution remains paper-only; selecting a real data source changes the market data, not the ledger.
+
+Manual startup is still available:
 
 ```bash
 # terminal 1 — Redis
@@ -71,12 +102,30 @@ cd monitoring/client && npm install && npm run dev
 Useful shortcuts:
 
 ```bash
+make tmux          # Redis + core + gateway + dashboard in tmux
+make tmux-attach   # attach to an existing tyche session
+make tmux-kill     # stop the tyche session
 make test          # Java + Go + Python suites
+make test-dashboard  # dashboard type-check and production build
 make backtest      # real-data backtest with the default universe
 make build         # installDist + gateway binary
 make proto         # regenerate Go and Java stubs from gateway/proto/stockrec.proto
 make up / down     # Docker Compose stack
 ```
+
+## Strategy library
+
+Strategies live in `core/app/src/main/java/org/Tyche/src/core/engine/Scheduler/Functions/` and are registered in `FunctionAlloter`. The current library has 90 registrations:
+
+| Timeframe | Registrations | Focus |
+| --- | ---: | --- |
+| `sec5` | 4 | fast SMA/EMA, RSI(2), volume breakout |
+| `sec30` | 8 | EMA cross, StochRSI, Williams %R, MFI, OBV trend |
+| `min1` | 40 | full library |
+| `min15` | 23 | trend, momentum, volume, volatility and price-action setups |
+| `hour1` | 15 | slower trend and money-flow confirmation |
+
+Families are `trend`, `momentum`, `mean_reversion`, `breakout`, `volume`, `volatility`, and `price_action`. A strategy extends `BaseFunction`, implements one `evaluate` method, and receives `Boot`/`Roll` lifecycle behavior for free. The gateway uses the emitted `family` field to avoid double-counting correlated signals; repeated emissions from the same strategy and timeframe replace each other.
 
 ## Status API
 
@@ -92,8 +141,8 @@ It includes:
 - `positions`: quantity, entry, live price, market value, PnL, stop/target, confidence, and hold metadata.
 - `decisions`: the recent BUY/SELL attempts with fill/rejection status and reason.
 - `closed_trades`: completed round trips with exit reason and holding time.
-- `signals`: recent Redis signals before aggregation.
-- `market`: the live watchlist with prices and aggregate/peak confidence.
+- `signals`: recent Redis signals before aggregation, including strategy and candle size.
+- `market`: the live watchlist with prices plus family-aware aggregate and peak confidence.
 - `feed`: data source, symbols, core/Redis connectivity, last roll/boot, and missing-ticker diagnostics.
 - `stats` and `risk`: event counters and the active sizing/exit controls.
 
@@ -116,7 +165,13 @@ Yahoo's `/v7/finance/quote` endpoint now requires a crumb/cookie, so Tyche uses 
 The one-time login flow lives in the Go gateway alongside the data plane:
 
 1. Create an app at <https://developers.kite.trade> and set a redirect URL.
-2. Put `TYCHE_KITE_API_KEY` and `TYCHE_KITE_API_SECRET` in `.env` (Compose passes them to the gateway). For a local install, export them in the shell instead.
+2. Put `TYCHE_KITE_API_KEY` and `TYCHE_KITE_API_SECRET` in `.env` (Compose passes them to the gateway). For a local install, export them from `.env` first:
+
+   ```bash
+   set -a; . ./.env; set +a
+   make build
+   ```
+
 3. Print the login URL and open it in a browser:
 
    ```bash

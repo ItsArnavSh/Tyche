@@ -37,8 +37,52 @@ func TestBucketDedupesPerStrategy(t *testing.T) {
 
 	b.SignalBucket(entity.Signal{Name: "A", Strategy: "macd", Size: entity.HOUR1, Confidence: 0.5})
 	confidence, _ = b.GetConfidence("A")
-	if confidence < 0.99 {
-		t.Fatalf("aggregate confidence = %.3f, want clamped to 1", confidence)
+	if confidence < 0.83 || confidence > 0.87 {
+		t.Fatalf("aggregate confidence = %.3f, want family max plus consensus bonus", confidence)
+	}
+}
+
+func TestBucketFamilyAggregationDoesNotDoubleCount(t *testing.T) {
+	b, _ := newTestBucket(map[string]float64{"A": 100})
+	b.SignalBucket(entity.Signal{Name: "A", Strategy: "ema_cross", Family: "trend",
+		Size: entity.MIN1, Confidence: 0.8})
+	b.SignalBucket(entity.Signal{Name: "A", Strategy: "adx", Family: "trend",
+		Size: entity.MIN1, Confidence: 0.7})
+	confidence, _ := b.GetConfidence("A")
+	if confidence < 0.79 || confidence > 0.81 {
+		t.Fatalf("same-family confidence = %.3f, want strongest family only", confidence)
+	}
+
+	b.SignalBucket(entity.Signal{Name: "A", Strategy: "mfi", Family: "momentum",
+		Size: entity.MIN1, Confidence: 0.6})
+	confidence, _ = b.GetConfidence("A")
+	if confidence < 0.84 || confidence > 0.86 {
+		t.Fatalf("multi-family confidence = %.3f, want 0.8 plus one bonus", confidence)
+	}
+
+	// Many correlated families are capped at one.
+	for i, family := range []string{"volume", "volatility", "price_action"} {
+		b.SignalBucket(entity.Signal{Name: "A", Strategy: family,
+			Family: family, Size: entity.MIN1, Confidence: 0.9 + float64(i)*0.01})
+	}
+	confidence, _ = b.GetConfidence("A")
+	if confidence != 1 {
+		t.Fatalf("aggregate should cap at 1, got %.3f", confidence)
+	}
+}
+
+func TestBucketKeepsSameStrategyAcrossTimeframes(t *testing.T) {
+	b, _ := newTestBucket(map[string]float64{"A": 100})
+	b.SignalBucket(entity.Signal{Name: "A", Strategy: "rsi", Family: "momentum",
+		Size: entity.MIN1, Confidence: 0.7})
+	b.SignalBucket(entity.Signal{Name: "A", Strategy: "rsi", Family: "momentum",
+		Size: entity.MIN15, Confidence: 0.8})
+	if got := len(b.Signals["A"]); got != 2 {
+		t.Fatalf("stored signals = %d, want one per timeframe", got)
+	}
+	confidence, _ := b.GetConfidence("A")
+	if confidence < 0.79 || confidence > 0.81 {
+		t.Fatalf("same-family multi-timeframe confidence = %.3f", confidence)
 	}
 }
 

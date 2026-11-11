@@ -11,18 +11,7 @@ public class F_SMA extends BaseFunction {
     private static final int PERIOD = 14;
 
     @Override
-    public void Boot(StartParams params) {
-        logger.debug("[F_SMA Boot] {} ({} candles)", params.context.ticker.name,
-                params.repo.cache.candle_count(params.context.ticker));
-        evaluate(params);
-    }
-
-    @Override
-    public void Roll(StartParams params) {
-        evaluate(params);
-    }
-
-    private void evaluate(StartParams params) {
+    protected void evaluate(StartParams params) {
         List<Candle> candles = candles(params);
         if (candles.size() < PERIOD + 1) {
             return;
@@ -41,5 +30,10 @@ public class F_SMA extends BaseFunction {
         if (prevClose <= prevSma && close > currentSma) {
             emit(params, 0.80, String.format("price %.2f crossed above SMA%d %.2f", close, PERIOD, currentSma));
         }
+    }
+
+    @Override
+    public String family() {
+        return "trend";
     }
 }

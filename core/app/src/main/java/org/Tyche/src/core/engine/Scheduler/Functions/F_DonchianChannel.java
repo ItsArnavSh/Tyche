@@ -11,16 +11,7 @@ public class F_DonchianChannel extends BaseFunction {
     private static final int PERIOD = 20;
 
     @Override
-    public void Boot(StartParams params) {
-        evaluate(params);
-    }
-
-    @Override
-    public void Roll(StartParams params) {
-        evaluate(params);
-    }
-
-    private void evaluate(StartParams params) {
+    protected void evaluate(StartParams params) {
         List<Candle> candles = candles(params);
         if (candles.size() < PERIOD + 2) {
             return;
@@ -38,5 +29,10 @@ public class F_DonchianChannel extends BaseFunction {
         if (closes[n - 1] > channel.highest() && closes[n - 2] <= channel.highest()) {
             emit(params, 0.84, String.format("Donchian breakout above %.2f", channel.highest()));
         }
+    }
+
+    @Override
+    public String family() {
+        return "breakout";
     }
 }

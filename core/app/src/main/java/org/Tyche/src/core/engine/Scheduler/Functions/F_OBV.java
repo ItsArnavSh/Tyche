@@ -12,16 +12,7 @@ public class F_OBV extends BaseFunction {
     private static final int TREND_PERIOD = 20;
 
     @Override
-    public void Boot(StartParams params) {
-        evaluate(params);
-    }
-
-    @Override
-    public void Roll(StartParams params) {
-        evaluate(params);
-    }
-
-    private void evaluate(StartParams params) {
+    protected void evaluate(StartParams params) {
         List<Candle> candles = candles(params);
         if (candles.size() < TREND_PERIOD + BREAKOUT_LOOKBACK + 1) {
             return;
@@ -41,5 +32,10 @@ public class F_OBV extends BaseFunction {
             emit(params, 0.65, String.format("OBV %.0f made a %d-bar high with price above SMA%d",
                     obv[n - 1], BREAKOUT_LOOKBACK, TREND_PERIOD));
         }
+    }
+
+    @Override
+    public String family() {
+        return "volume";
     }
 }

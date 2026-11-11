@@ -12,16 +12,7 @@ public class F_DoubleSMA extends BaseFunction {
     private static final int SLOW = 21;
 
     @Override
-    public void Boot(StartParams params) {
-        evaluate(params);
-    }
-
-    @Override
-    public void Roll(StartParams params) {
-        evaluate(params);
-    }
-
-    private void evaluate(StartParams params) {
+    protected void evaluate(StartParams params) {
         List<Candle> candles = candles(params);
         if (candles.size() < SLOW + 1) {
             return;
@@ -44,5 +35,10 @@ public class F_DoubleSMA extends BaseFunction {
             emit(params, 0.85, String.format("golden cross SMA%d %.2f > SMA%d %.2f",
                     FAST, currentFast, SLOW, currentSlow));
         }
+    }
+
+    @Override
+    public String family() {
+        return "trend";
     }
 }

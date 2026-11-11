@@ -12,16 +12,7 @@ public class F_BollingerBands extends BaseFunction {
     private static final double MULTIPLIER = 2.0;
 
     @Override
-    public void Boot(StartParams params) {
-        evaluate(params);
-    }
-
-    @Override
-    public void Roll(StartParams params) {
-        evaluate(params);
-    }
-
-    private void evaluate(StartParams params) {
+    protected void evaluate(StartParams params) {
         List<Candle> candles = candles(params);
         if (candles.size() < PERIOD + 1) {
             return;
@@ -41,5 +32,10 @@ public class F_BollingerBands extends BaseFunction {
         if (prevClose <= previous.lower() && close > current.lower()) {
             emit(params, 0.73, String.format("price %.2f reclaimed lower Bollinger band %.2f", close, current.lower()));
         }
+    }
+
+    @Override
+    public String family() {
+        return "mean_reversion";
     }
 }

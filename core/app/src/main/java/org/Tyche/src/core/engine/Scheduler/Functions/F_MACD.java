@@ -13,16 +13,7 @@ public class F_MACD extends BaseFunction {
     private static final int SIGNAL = 9;
 
     @Override
-    public void Boot(StartParams params) {
-        evaluate(params);
-    }
-
-    @Override
-    public void Roll(StartParams params) {
-        evaluate(params);
-    }
-
-    private void evaluate(StartParams params) {
+    protected void evaluate(StartParams params) {
         List<Candle> candles = candles(params);
         if (candles.size() < SLOW + SIGNAL + 1) {
             return;
@@ -43,5 +34,10 @@ public class F_MACD extends BaseFunction {
         if (prevMacd <= prevSignal && currentMacd > currentSignal) {
             emit(params, 0.82, String.format("MACD bullish cross (%.3f > %.3f)", currentMacd, currentSignal));
         }
+    }
+
+    @Override
+    public String family() {
+        return "trend";
     }
 }

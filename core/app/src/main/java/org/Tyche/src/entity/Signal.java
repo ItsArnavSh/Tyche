@@ -27,6 +27,10 @@ public class Signal {
     @JsonProperty("strategy")
     private String strategy;
 
+    /** Coarse family used by the gateway for correlation-aware aggregation. */
+    @JsonProperty("family")
+    private String family;
+
     // --- Constructors ---
 
     public Signal() {
@@ -37,11 +41,16 @@ public class Signal {
     }
 
     public Signal(String name, double confidence, CandleSize size, Instant time, String strategy) {
+        this(name, confidence, size, time, strategy, "unknown");
+    }
+
+    public Signal(String name, double confidence, CandleSize size, Instant time, String strategy, String family) {
         this.name = name;
         this.confidence = clamp(confidence);
         this.size = size;
         this.time = time == null ? Instant.now() : time;
         this.strategy = strategy == null || strategy.isBlank() ? "unknown" : strategy;
+        this.family = family == null || family.isBlank() ? "unknown" : family;
     }
 
     private static double clamp(double value) {
@@ -91,6 +100,14 @@ public class Signal {
 
     public void setStrategy(String strategy) {
         this.strategy = strategy;
+    }
+
+    public String getFamily() {
+        return family;
+    }
+
+    public void setFamily(String family) {
+        this.family = family;
     }
 
     // --- JSON serialization ---

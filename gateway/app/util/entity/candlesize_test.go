@@ -65,8 +65,11 @@ func TestCandleSizeJSON(t *testing.T) {
 func TestSignalExpiryAndStrategyKey(t *testing.T) {
 	now := time.Now()
 	signal := Signal{Name: "X", Confidence: 0.8, Size: MIN1, Time: now, Strategy: ""}
-	if signal.StrategyKey() != "unknown" {
+	if signal.StrategyKey() != "unknown@min1" {
 		t.Fatalf("strategy key = %q", signal.StrategyKey())
+	}
+	if signal.FamilyKey() != "unknown" {
+		t.Fatalf("family key = %q", signal.FamilyKey())
 	}
 	if signal.Expired(now.Add(30 * time.Second)) {
 		t.Fatal("signal expired too early")
@@ -76,6 +79,23 @@ func TestSignalExpiryAndStrategyKey(t *testing.T) {
 	}
 	if (Signal{}).Expired(now) {
 		t.Fatal("zero-time signal should not expire")
+	}
+}
+
+func TestSignalKeyIncludesTimeframeAndFamily(t *testing.T) {
+	minute := Signal{Strategy: "rsi", Size: MIN1}
+	fifteen := Signal{Strategy: "rsi", Size: MIN15}
+	if minute.StrategyKey() == fifteen.StrategyKey() {
+		t.Fatalf("same strategy on different timeframes collides: %q", minute.StrategyKey())
+	}
+	if minute.StrategyKey() != "rsi@min1" || fifteen.StrategyKey() != "rsi@min15" {
+		t.Fatalf("unexpected keys: %q, %q", minute.StrategyKey(), fifteen.StrategyKey())
+	}
+	if got := (Signal{Strategy: "rsi", Family: "momentum"}).FamilyKey(); got != "momentum" {
+		t.Fatalf("family key = %q", got)
+	}
+	if got := (Signal{Strategy: "rsi"}).FamilyKey(); got != "rsi" {
+		t.Fatalf("fallback family key = %q", got)
 	}
 }
 

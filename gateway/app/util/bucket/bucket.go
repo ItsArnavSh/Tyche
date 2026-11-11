@@ -13,13 +13,13 @@ import (
 
 // Bucket aggregates decaying trading signals per ticker.
 //
-// Each ticker keeps at most one live signal per strategy; a fresh emission
-// from the same strategy replaces the previous one.  Confidence decays
-// exponentially and reaches ~1% of its initial value at the candle-size
-// expiry, after which the signal is pruned.
+// Each ticker keeps at most one live signal per strategy and timeframe; a
+// fresh emission from the same producer replaces the previous one.
+// Confidence decays exponentially and reaches ~1% of its initial value at
+// the candle-size expiry, after which the signal is pruned.
 type Bucket struct {
 	mu       sync.RWMutex
-	Signals  map[string]map[string]entity.Signal // ticker -> strategy -> signal
+	Signals  map[string]map[string]entity.Signal // ticker -> strategy@timeframe -> signal
 	Producer producer.Producer
 }
 
@@ -75,9 +75,16 @@ func (b *Bucket) confidenceLocked(name string, strategies map[string]entity.Sign
 
 // confidenceStatsLocked returns the decayed aggregate and the strongest raw
 // confidence among live signals for a ticker.
+//
+// Correlated strategies should not stack as if they were independent votes.
+// We therefore take the strongest decayed signal in each family and add a
+// small consensus bonus for additional live families.  The result stays in
+// [0, 1] and still rewards genuine multi-family confirmation.
 func (b *Bucket) confidenceStatsLocked(name string, strategies map[string]entity.Signal, now time.Time) (float64, float64) {
-	total := 0.0
+	const consensusBonus = 0.05
+
 	peak := 0.0
+	families := make(map[string]float64)
 	for key, signal := range strategies {
 		if signal.Expired(now) {
 			delete(strategies, key)
@@ -87,10 +94,25 @@ func (b *Bucket) confidenceStatsLocked(name string, strategies map[string]entity
 			peak = signal.Confidence
 		}
 		duration := float64(signal.Size.Duration().Milliseconds())
-		total += util.ExponentialDecay(signal.Confidence, now, signal.Time, duration)
+		decayed := util.ExponentialDecay(signal.Confidence, now, signal.Time, duration)
+		family := signal.FamilyKey()
+		if decayed > families[family] {
+			families[family] = decayed
+		}
 	}
 	if len(strategies) == 0 {
 		delete(b.Signals, name)
+		families = nil
+	}
+
+	total := 0.0
+	for _, confidence := range families {
+		if confidence > total {
+			total = confidence
+		}
+	}
+	if len(families) > 1 {
+		total += consensusBonus * float64(len(families)-1)
 	}
 	if total > 1 {
 		total = 1

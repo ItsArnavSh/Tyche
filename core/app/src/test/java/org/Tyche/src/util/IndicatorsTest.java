@@ -258,4 +258,308 @@ class IndicatorsTest {
         assertArrayEquals(new double[] { 9, 10 }, result.low(), EPS);
         assertArrayEquals(new double[] { 10, 12 }, result.close(), EPS);
     }
+
+    @Test
+    void medianPriceAveragesHighAndLow() {
+        assertArrayEquals(new double[] { 9, 10 },
+                Indicators.medianPriceSeries(new double[] { 10, 11 }, new double[] { 8, 9 }), EPS);
+    }
+
+    @Test
+    void zScoreWarmsUpAndDetectsStretch() {
+        double[] flat = new double[10];
+        java.util.Arrays.fill(flat, 5);
+        assertSeries(new double[] { Double.NaN, Double.NaN, Double.NaN, Double.NaN,
+                0, 0, 0, 0, 0, 0 },
+                Indicators.zScoreSeries(flat, 5));
+
+        double[] stretched = new double[20];
+        java.util.Arrays.fill(stretched, 1);
+        stretched[19] = 10;
+        double[] z = Indicators.zScoreSeries(stretched, 20);
+        assertTrue(Double.isNaN(z[18]));
+        assertTrue(z[19] > 2);
+    }
+
+    @Test
+    void dmiTracksDirectionalTrends() {
+        int n = 40;
+        double[] risingHighs = new double[n];
+        double[] risingLows = new double[n];
+        double[] risingCloses = new double[n];
+        double[] fallingHighs = new double[n];
+        double[] fallingLows = new double[n];
+        double[] fallingCloses = new double[n];
+        for (int i = 0; i < n; i++) {
+            risingCloses[i] = 100 + i;
+            risingHighs[i] = risingCloses[i] + 1;
+            risingLows[i] = risingCloses[i] - 1;
+
+            fallingCloses[i] = 200 - i;
+            fallingHighs[i] = fallingCloses[i] + 1;
+            fallingLows[i] = fallingCloses[i] - 1;
+        }
+
+        Indicators.DmiResult up = Indicators.dmi(risingHighs, risingLows, risingCloses, 14);
+        Indicators.DmiResult down = Indicators.dmi(fallingHighs, fallingLows, fallingCloses, 14);
+
+        assertTrue(Double.isNaN(up.adx()[0]));
+        assertTrue(up.plusDi()[n - 1] > up.minusDi()[n - 1]);
+        assertTrue(up.adx()[n - 1] > 0);
+        assertTrue(Double.isNaN(up.adx()[26]));
+        assertFalse(Double.isNaN(up.adx()[27]));
+
+        assertTrue(down.minusDi()[n - 1] > down.plusDi()[n - 1]);
+        assertTrue(down.adx()[n - 1] > 0);
+    }
+
+    @Test
+    void aroonFindsRecentExtremes() {
+        int n = 30;
+        int period = 25;
+        double[] risingHighs = new double[n];
+        double[] risingLows = new double[n];
+        double[] fallingHighs = new double[n];
+        double[] fallingLows = new double[n];
+        for (int i = 0; i < n; i++) {
+            risingHighs[i] = 100 + i;
+            risingLows[i] = 90 + i;
+            fallingHighs[i] = 200 - i;
+            fallingLows[i] = 190 - i;
+        }
+
+        Indicators.AroonResult up = Indicators.aroon(risingHighs, risingLows, period);
+        Indicators.AroonResult down = Indicators.aroon(fallingHighs, fallingLows, period);
+
+        assertEquals(100, up.up()[n - 1], EPS);
+        assertEquals(0, up.down()[n - 1], EPS);
+        assertEquals(0, down.up()[n - 1], EPS);
+        assertEquals(100, down.down()[n - 1], EPS);
+        assertTrue(Double.isNaN(up.up()[period - 1]));
+    }
+
+    @Test
+    void parabolicSarTracksTrendDirection() {
+        int n = 30;
+        double[] risingHighs = new double[n];
+        double[] risingLows = new double[n];
+        double[] fallingHighs = new double[n];
+        double[] fallingLows = new double[n];
+        for (int i = 0; i < n; i++) {
+            risingHighs[i] = 101 + i;
+            risingLows[i] = 99 + i;
+            fallingHighs[i] = 201 - i;
+            fallingLows[i] = 199 - i;
+        }
+
+        Indicators.ParabolicSarResult up = Indicators.parabolicSar(risingHighs, risingLows, 0.02, 0.2);
+        Indicators.ParabolicSarResult down = Indicators.parabolicSar(fallingHighs, fallingLows, 0.02, 0.2);
+
+        assertEquals(1, up.direction()[n - 1]);
+        assertEquals(-1, down.direction()[n - 1]);
+        assertTrue(up.sar()[n - 1] < risingHighs[n - 1]);
+        assertTrue(down.sar()[n - 1] > fallingLows[n - 1]);
+    }
+
+    @Test
+    void ichimokuBuildsAllComponents() {
+        int n = 60;
+        double[] highs = new double[n];
+        double[] lows = new double[n];
+        for (int i = 0; i < n; i++) {
+            highs[i] = 101 + i;
+            lows[i] = 99 + i;
+        }
+
+        Indicators.IchimokuResult result = Indicators.ichimoku(highs, lows, 9, 26, 52);
+
+        assertTrue(Double.isNaN(result.tenkan()[7]));
+        assertFalse(Double.isNaN(result.tenkan()[8]));
+        assertTrue(Double.isNaN(result.kijun()[24]));
+        assertTrue(Double.isNaN(result.senkouB()[50]));
+        assertFalse(Double.isNaN(result.senkouB()[51]));
+        assertTrue(result.tenkan()[n - 1] > result.kijun()[n - 1]);
+        assertTrue(result.senkouA()[n - 1] > result.senkouB()[n - 1]);
+    }
+
+    @Test
+    void stochasticRsiHandlesFlatSeries() {
+        double[] flat = new double[60];
+        java.util.Arrays.fill(flat, 50);
+
+        StochasticResult result = Indicators.stochasticRsi(flat, 14, 14, 3);
+
+        assertTrue(Double.isNaN(result.k()[0]));
+        assertEquals(50, result.k()[result.k().length - 1], EPS);
+        assertEquals(50, result.d()[result.d().length - 1], EPS);
+    }
+
+    @Test
+    void williamsRMeasuresClosePositionInRange() {
+        int n = 20;
+        double[] risingHighs = new double[n];
+        double[] risingLows = new double[n];
+        double[] risingCloses = new double[n];
+        double[] fallingHighs = new double[n];
+        double[] fallingLows = new double[n];
+        double[] fallingCloses = new double[n];
+        for (int i = 0; i < n; i++) {
+            risingCloses[i] = 100 + i;
+            risingHighs[i] = risingCloses[i] + 1;
+            risingLows[i] = risingCloses[i] - 1;
+
+            fallingCloses[i] = 200 - i;
+            fallingHighs[i] = fallingCloses[i] + 1;
+            fallingLows[i] = fallingCloses[i] - 1;
+        }
+
+        double[] up = Indicators.williamsR(risingHighs, risingLows, risingCloses, 14);
+        double[] down = Indicators.williamsR(fallingHighs, fallingLows, fallingCloses, 14);
+        assertTrue(up[n - 1] > -20);
+        assertTrue(down[n - 1] < -80);
+
+        double[] flat = Indicators.williamsR(
+                new double[] { 5, 5, 5 }, new double[] { 5, 5, 5 },
+                new double[] { 5, 5, 5 }, 3);
+        assertEquals(-50, flat[2], EPS);
+    }
+
+    @Test
+    void mfiRespondsToDirectionalFlow() {
+        int n = 20;
+        double[] risingHighs = new double[n];
+        double[] risingLows = new double[n];
+        double[] risingCloses = new double[n];
+        double[] fallingHighs = new double[n];
+        double[] fallingLows = new double[n];
+        double[] fallingCloses = new double[n];
+        double[] volumes = new double[n];
+        double[] flatHighs = new double[n];
+        double[] flatLows = new double[n];
+        double[] flatCloses = new double[n];
+        java.util.Arrays.fill(volumes, 100);
+        for (int i = 0; i < n; i++) {
+            risingCloses[i] = 100 + i;
+            risingHighs[i] = risingCloses[i] + 1;
+            risingLows[i] = risingCloses[i] - 1;
+
+            fallingCloses[i] = 200 - i;
+            fallingHighs[i] = fallingCloses[i] + 1;
+            fallingLows[i] = fallingCloses[i] - 1;
+
+            flatHighs[i] = 10;
+            flatLows[i] = 10;
+            flatCloses[i] = 10;
+        }
+
+        assertEquals(100, Indicators.mfi(risingHighs, risingLows, risingCloses, volumes, 14)[n - 1], EPS);
+        assertEquals(0, Indicators.mfi(fallingHighs, fallingLows, fallingCloses, volumes, 14)[n - 1], EPS);
+        assertEquals(50, Indicators.mfi(flatHighs, flatLows, flatCloses, volumes, 14)[n - 1], EPS);
+    }
+
+    @Test
+    void awesomeOscillatorUsesMedianPrice() {
+        int n = 60;
+        double[] highs = new double[n];
+        double[] lows = new double[n];
+        double[] flatHighs = new double[n];
+        double[] flatLows = new double[n];
+        for (int i = 0; i < n; i++) {
+            highs[i] = 101 + i;
+            lows[i] = 99 + i;
+            flatHighs[i] = 10;
+            flatLows[i] = 10;
+        }
+
+        double[] ao = Indicators.awesomeOscillator(highs, lows, 5, 34);
+        assertTrue(Double.isNaN(ao[32]));
+        assertFalse(Double.isNaN(ao[33]));
+        assertTrue(ao[n - 1] > 0);
+        assertEquals(0, Indicators.awesomeOscillator(flatHighs, flatLows, 5, 34)[n - 1], EPS);
+    }
+
+    @Test
+    void keltnerUsesEmaAndAtrEnvelope() {
+        int n = 30;
+        double[] highs = new double[n];
+        double[] lows = new double[n];
+        double[] closes = new double[n];
+        for (int i = 0; i < n; i++) {
+            highs[i] = 11;
+            lows[i] = 9;
+            closes[i] = 10;
+        }
+
+        Indicators.KeltnerResult result = Indicators.keltner(highs, lows, closes, 20, 20, 1.5);
+        assertEquals(10, result.middle(), EPS);
+        assertEquals(13, result.upper(), EPS);
+        assertEquals(7, result.lower(), EPS);
+
+        Indicators.KeltnerResult tooShort = Indicators.keltner(
+                new double[] { 11 }, new double[] { 9 }, new double[] { 10 }, 20, 20, 1.5);
+        assertTrue(Double.isNaN(tooShort.middle()));
+    }
+
+    @Test
+    void pivotLevelsUseFloorTraderFormula() {
+        Indicators.PivotResult pivot = Indicators.pivot(110, 90, 100);
+        assertEquals(100, pivot.pivot(), EPS);
+        assertEquals(90, pivot.support1(), EPS);
+        assertEquals(110, pivot.resistance1(), EPS);
+    }
+
+    @Test
+    void cmfMeasuresBuyingAndSellingPressure() {
+        int n = 25;
+        double[] risingHighs = new double[n];
+        double[] risingLows = new double[n];
+        double[] risingCloses = new double[n];
+        double[] fallingHighs = new double[n];
+        double[] fallingLows = new double[n];
+        double[] fallingCloses = new double[n];
+        double[] flatHighs = new double[n];
+        double[] flatLows = new double[n];
+        double[] flatCloses = new double[n];
+        double[] volumes = new double[n];
+        java.util.Arrays.fill(volumes, 100);
+        for (int i = 0; i < n; i++) {
+            risingCloses[i] = 100 + i;
+            risingHighs[i] = risingCloses[i] + 0.5;
+            risingLows[i] = risingCloses[i] - 1.5;
+
+            fallingCloses[i] = 200 - i;
+            fallingHighs[i] = fallingCloses[i] + 1.5;
+            fallingLows[i] = fallingCloses[i] - 0.5;
+
+            flatHighs[i] = 10;
+            flatLows[i] = 10;
+            flatCloses[i] = 10;
+        }
+
+        assertEquals(0.5, Indicators.cmfSeries(
+                risingHighs, risingLows, risingCloses, volumes, 20)[n - 1], EPS);
+        assertEquals(-0.5, Indicators.cmfSeries(
+                fallingHighs, fallingLows, fallingCloses, volumes, 20)[n - 1], EPS);
+        assertEquals(0, Indicators.cmfSeries(
+                flatHighs, flatLows, flatCloses, volumes, 20)[n - 1], EPS);
+    }
+
+    @Test
+    void forceIndexFollowsPriceDirection() {
+        int n = 30;
+        double[] rising = new double[n];
+        double[] falling = new double[n];
+        double[] flat = new double[n];
+        double[] volumes = new double[n];
+        java.util.Arrays.fill(volumes, 10);
+        for (int i = 0; i < n; i++) {
+            rising[i] = 100 + i;
+            falling[i] = 200 - i;
+            flat[i] = 50;
+        }
+
+        assertTrue(Indicators.forceIndexSeries(rising, volumes, 13)[n - 1] > 9.9);
+        assertTrue(Indicators.forceIndexSeries(falling, volumes, 13)[n - 1] < -9.9);
+        assertEquals(0, Indicators.forceIndexSeries(flat, volumes, 13)[n - 1], EPS);
+    }
 }

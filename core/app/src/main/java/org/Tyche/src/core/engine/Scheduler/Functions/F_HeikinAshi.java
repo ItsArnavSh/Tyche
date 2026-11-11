@@ -10,16 +10,7 @@ import org.Tyche.src.util.Indicators;
 public class F_HeikinAshi extends BaseFunction {
 
     @Override
-    public void Boot(StartParams params) {
-        evaluate(params);
-    }
-
-    @Override
-    public void Roll(StartParams params) {
-        evaluate(params);
-    }
-
-    private void evaluate(StartParams params) {
+    protected void evaluate(StartParams params) {
         List<Candle> candles = candles(params);
         if (candles.size() < 4) {
             return;
@@ -39,5 +30,10 @@ public class F_HeikinAshi extends BaseFunction {
         if (beforeBear && prevBull && currentBull) {
             emit(params, 0.66, "two bullish Heikin-Ashi candles after a bearish candle");
         }
+    }
+
+    @Override
+    public String family() {
+        return "price_action";
     }
 }

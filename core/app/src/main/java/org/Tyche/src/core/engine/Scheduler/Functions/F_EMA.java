@@ -11,16 +11,7 @@ public class F_EMA extends BaseFunction {
     private static final int PERIOD = 14;
 
     @Override
-    public void Boot(StartParams params) {
-        evaluate(params);
-    }
-
-    @Override
-    public void Roll(StartParams params) {
-        evaluate(params);
-    }
-
-    private void evaluate(StartParams params) {
+    protected void evaluate(StartParams params) {
         List<Candle> candles = candles(params);
         if (candles.size() < PERIOD + 1) {
             return;
@@ -39,5 +30,10 @@ public class F_EMA extends BaseFunction {
         if (prevClose <= prevEma && close > currentEma) {
             emit(params, 0.80, String.format("price %.2f crossed above EMA%d %.2f", close, PERIOD, currentEma));
         }
+    }
+
+    @Override
+    public String family() {
+        return "trend";
     }
 }

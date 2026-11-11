@@ -12,16 +12,7 @@ public class F_Supertrend extends BaseFunction {
     private static final double MULTIPLIER = 3.0;
 
     @Override
-    public void Boot(StartParams params) {
-        evaluate(params);
-    }
-
-    @Override
-    public void Roll(StartParams params) {
-        evaluate(params);
-    }
-
-    private void evaluate(StartParams params) {
+    protected void evaluate(StartParams params) {
         List<Candle> candles = candles(params);
         if (candles.size() < PERIOD + 3) {
             return;
@@ -39,5 +30,10 @@ public class F_Supertrend extends BaseFunction {
         if (trend.direction()[n - 2] < 0 && trend.direction()[n - 1] > 0) {
             emit(params, 0.83, String.format("Supertrend flipped bullish at %.2f", trend.line()[n - 1]));
         }
+    }
+
+    @Override
+    public String family() {
+        return "trend";
     }
 }

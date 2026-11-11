@@ -151,10 +151,14 @@ func (s *Store) RecordSignal(signal entity.Signal) {
 	if at.IsZero() {
 		at = time.Now()
 	}
+	strategy := signal.Strategy
+	if strategy == "" {
+		strategy = "unknown"
+	}
 	event := SignalEvent{
 		At:         at,
 		Ticker:     signal.Name,
-		Strategy:   signal.StrategyKey(),
+		Strategy:   strategy,
 		Confidence: signal.Confidence,
 		Size:       signal.Size.String(),
 		ExpiresAt:  signal.ExpiresAt(),

@@ -12,16 +12,7 @@ public class F_CCI extends BaseFunction {
     private static final int PERIOD = 20;
 
     @Override
-    public void Boot(StartParams params) {
-        evaluate(params);
-    }
-
-    @Override
-    public void Roll(StartParams params) {
-        evaluate(params);
-    }
-
-    private void evaluate(StartParams params) {
+    protected void evaluate(StartParams params) {
         List<Candle> candles = candles(params);
         if (candles.size() < PERIOD + 2) {
             return;
@@ -42,5 +33,10 @@ public class F_CCI extends BaseFunction {
         if (previous < -100 && current >= -100) {
             emit(params, 0.72, String.format("CCI%d exited oversold (%.1f -> %.1f)", PERIOD, previous, current));
         }
+    }
+
+    @Override
+    public String family() {
+        return "momentum";
     }
 }

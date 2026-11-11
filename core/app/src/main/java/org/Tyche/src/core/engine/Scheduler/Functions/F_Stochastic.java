@@ -12,16 +12,7 @@ public class F_Stochastic extends BaseFunction {
     private static final int D_PERIOD = 3;
 
     @Override
-    public void Boot(StartParams params) {
-        evaluate(params);
-    }
-
-    @Override
-    public void Roll(StartParams params) {
-        evaluate(params);
-    }
-
-    private void evaluate(StartParams params) {
+    protected void evaluate(StartParams params) {
         List<Candle> candles = candles(params);
         if (candles.size() < K_PERIOD + D_PERIOD + 1) {
             return;
@@ -43,5 +34,10 @@ public class F_Stochastic extends BaseFunction {
         if (prevK <= prevD && currentK > currentD && currentK < 30) {
             emit(params, 0.74, String.format("stochastic bullish cross (K %.1f, D %.1f)", currentK, currentD));
         }
+    }
+
+    @Override
+    public String family() {
+        return "momentum";
     }
 }

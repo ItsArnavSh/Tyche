@@ -1,6 +1,9 @@
 package entity
 
-import "time"
+import (
+	"fmt"
+	"time"
+)
 
 type Signal struct {
 	Name       string     `json:"name"`
@@ -8,6 +11,7 @@ type Signal struct {
 	Size       CandleSize `json:"size"`
 	Time       time.Time  `json:"time"`
 	Strategy   string     `json:"strategy,omitempty"`
+	Family     string     `json:"family,omitempty"`
 }
 
 type SignalConf struct {
@@ -20,12 +24,27 @@ type SignalConf struct {
 }
 
 // StrategyKey identifies the producer of a signal so repeated emissions from
-// the same strategy replace each other instead of stacking up.
+// the same strategy and timeframe replace each other instead of stacking up.
+// The timeframe is part of the key because the same strategy can legitimately
+// emit independent signals on more than one candle size.
 func (s Signal) StrategyKey() string {
-	if s.Strategy == "" {
-		return "unknown"
+	strategy := s.Strategy
+	if strategy == "" {
+		strategy = "unknown"
 	}
-	return s.Strategy
+	return fmt.Sprintf("%s@%s", strategy, s.Size.String())
+}
+
+// FamilyKey groups correlated strategies for aggregation.  Signals from older
+// producers that do not send a family fall back to the strategy name.
+func (s Signal) FamilyKey() string {
+	if s.Family != "" {
+		return s.Family
+	}
+	if s.Strategy != "" {
+		return s.Strategy
+	}
+	return "unknown"
 }
 
 func (s Signal) ExpiresAt() time.Time {

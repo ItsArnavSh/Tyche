@@ -12,16 +12,7 @@ public class F_ATR extends BaseFunction {
     private static final double MULTIPLIER = 1.5;
 
     @Override
-    public void Boot(StartParams params) {
-        evaluate(params);
-    }
-
-    @Override
-    public void Roll(StartParams params) {
-        evaluate(params);
-    }
-
-    private void evaluate(StartParams params) {
+    protected void evaluate(StartParams params) {
         List<Candle> candles = candles(params);
         if (candles.size() < PERIOD + 2) {
             return;
@@ -41,5 +32,10 @@ public class F_ATR extends BaseFunction {
             emit(params, 0.70, String.format("ATR breakout: move %.2f > %.2fxATR %.2f",
                     move, MULTIPLIER, currentAtr));
         }
+    }
+
+    @Override
+    public String family() {
+        return "volatility";
     }
 }

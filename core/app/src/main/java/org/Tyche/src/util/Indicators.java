@@ -475,4 +475,441 @@ public final class Indicators {
         }
         return new HeikinAshiResult(haOpen, haHigh, haLow, haClose);
     }
+
+    // ── Momentum / trend extensions ─────────────────────────────────────
+
+    public static double[] medianPriceSeries(double[] highs, double[] lows) {
+        int n = Math.min(highs == null ? 0 : highs.length, lows == null ? 0 : lows.length);
+        double[] out = new double[n];
+        for (int i = 0; i < n; i++) {
+            out[i] = (highs[i] + lows[i]) / 2.0;
+        }
+        return out;
+    }
+
+    /** Rolling z-score of the latest value versus the prior {@code period} bars. */
+    public static double[] zScoreSeries(double[] values, int period) {
+        double[] out = new double[values == null ? 0 : values.length];
+        java.util.Arrays.fill(out, Double.NaN);
+        if (values == null || period <= 0 || values.length < period) {
+            return out;
+        }
+        for (int i = period - 1; i < values.length; i++) {
+            double sum = 0;
+            for (int j = i - period + 1; j <= i; j++) {
+                sum += values[j];
+            }
+            double mean = sum / period;
+            double variance = 0;
+            for (int j = i - period + 1; j <= i; j++) {
+                double diff = values[j] - mean;
+                variance += diff * diff;
+            }
+            double std = Math.sqrt(variance / period);
+            out[i] = std == 0 ? 0 : (values[i] - mean) / std;
+        }
+        return out;
+    }
+
+    public record DmiResult(double[] adx, double[] plusDi, double[] minusDi) {
+    }
+
+    /** Wilder's directional movement index with ADX smoothing. */
+    public static DmiResult dmi(double[] highs, double[] lows, double[] closes, int period) {
+        int n = Math.min(highs == null ? 0 : highs.length,
+                Math.min(lows == null ? 0 : lows.length, closes == null ? 0 : closes.length));
+        double[] adx = new double[n];
+        double[] plusDi = new double[n];
+        double[] minusDi = new double[n];
+        java.util.Arrays.fill(adx, Double.NaN);
+        java.util.Arrays.fill(plusDi, Double.NaN);
+        java.util.Arrays.fill(minusDi, Double.NaN);
+        if (n < period + 2 || period <= 0) {
+            return new DmiResult(adx, plusDi, minusDi);
+        }
+
+        double[] tr = trueRangeSeries(highs, lows, closes);
+        double[] plusDm = new double[n];
+        double[] minusDm = new double[n];
+        for (int i = 1; i < n; i++) {
+            double up = highs[i] - highs[i - 1];
+            double down = lows[i - 1] - lows[i];
+            if (up > down && up > 0) {
+                plusDm[i] = up;
+            }
+            if (down > up && down > 0) {
+                minusDm[i] = down;
+            }
+        }
+
+        double trSum = 0;
+        double plusSum = 0;
+        double minusSum = 0;
+        for (int i = 1; i <= period; i++) {
+            trSum += tr[i];
+            plusSum += plusDm[i];
+            minusSum += minusDm[i];
+        }
+
+        double[] dx = new double[n];
+        java.util.Arrays.fill(dx, Double.NaN);
+        setDmiValues(period, trSum, plusSum, minusSum, plusDi, minusDi, dx);
+        for (int i = period + 1; i < n; i++) {
+            trSum = trSum - trSum / period + tr[i];
+            plusSum = plusSum - plusSum / period + plusDm[i];
+            minusSum = minusSum - minusSum / period + minusDm[i];
+            setDmiValues(i, trSum, plusSum, minusSum, plusDi, minusDi, dx);
+        }
+
+        double dxSum = 0;
+        int dxCount = 0;
+        double adxValue = Double.NaN;
+        for (int i = period; i < n; i++) {
+            if (Double.isNaN(dx[i])) {
+                continue;
+            }
+            if (dxCount < period) {
+                dxSum += dx[i];
+                dxCount++;
+                if (dxCount == period) {
+                    adxValue = dxSum / period;
+                    adx[i] = adxValue;
+                }
+            } else {
+                adxValue = (adxValue * (period - 1) + dx[i]) / period;
+                adx[i] = adxValue;
+            }
+        }
+        return new DmiResult(adx, plusDi, minusDi);
+    }
+
+    private static void setDmiValues(int index, double trSum, double plusSum, double minusSum,
+            double[] plusDi, double[] minusDi, double[] dx) {
+        double plus = trSum == 0 ? 0 : 100.0 * plusSum / trSum;
+        double minus = trSum == 0 ? 0 : 100.0 * minusSum / trSum;
+        plusDi[index] = plus;
+        minusDi[index] = minus;
+        double denominator = plus + minus;
+        dx[index] = denominator == 0 ? 0 : 100.0 * Math.abs(plus - minus) / denominator;
+    }
+
+    public record AroonResult(double[] up, double[] down) {
+    }
+
+    /** Aroon up/down over a window of {@code period + 1} bars. */
+    public static AroonResult aroon(double[] highs, double[] lows, int period) {
+        int n = Math.min(highs == null ? 0 : highs.length, lows == null ? 0 : lows.length);
+        double[] up = new double[n];
+        double[] down = new double[n];
+        java.util.Arrays.fill(up, Double.NaN);
+        java.util.Arrays.fill(down, Double.NaN);
+        if (period <= 0 || n < period + 1) {
+            return new AroonResult(up, down);
+        }
+        for (int i = period; i < n; i++) {
+            int start = i - period;
+            int highIndex = start;
+            int lowIndex = start;
+            for (int j = start + 1; j <= i; j++) {
+                if (highs[j] >= highs[highIndex]) {
+                    highIndex = j;
+                }
+                if (lows[j] <= lows[lowIndex]) {
+                    lowIndex = j;
+                }
+            }
+            up[i] = 100.0 * (period - (i - highIndex)) / period;
+            down[i] = 100.0 * (period - (i - lowIndex)) / period;
+        }
+        return new AroonResult(up, down);
+    }
+
+    public record ParabolicSarResult(double[] sar, int[] direction) {
+    }
+
+    /** Parabolic SAR with an acceleration factor that starts at {@code step}. */
+    public static ParabolicSarResult parabolicSar(double[] highs, double[] lows,
+            double step, double maxStep) {
+        int n = Math.min(highs == null ? 0 : highs.length, lows == null ? 0 : lows.length);
+        double[] sar = new double[n];
+        int[] direction = new int[n];
+        if (n < 2 || step <= 0 || maxStep < step) {
+            return new ParabolicSarResult(sar, direction);
+        }
+
+        int dir = highs[1] >= highs[0] ? 1 : -1;
+        double af = step;
+        double extreme = dir > 0 ? highs[0] : lows[0];
+        sar[0] = dir > 0 ? lows[0] : highs[0];
+        direction[0] = dir;
+
+        for (int i = 1; i < n; i++) {
+            double next = sar[i - 1] + af * (extreme - sar[i - 1]);
+            if (dir > 0) {
+                next = Math.min(next, lows[i - 1]);
+                if (i >= 2) {
+                    next = Math.min(next, lows[i - 2]);
+                }
+            } else {
+                next = Math.max(next, highs[i - 1]);
+                if (i >= 2) {
+                    next = Math.max(next, highs[i - 2]);
+                }
+            }
+
+            if (dir > 0 && lows[i] < next) {
+                dir = -1;
+                sar[i] = extreme;
+                extreme = lows[i];
+                af = step;
+            } else if (dir < 0 && highs[i] > next) {
+                dir = 1;
+                sar[i] = extreme;
+                extreme = highs[i];
+                af = step;
+            } else {
+                sar[i] = next;
+                if (dir > 0) {
+                    extreme = Math.max(extreme, highs[i]);
+                } else {
+                    extreme = Math.min(extreme, lows[i]);
+                }
+                af = Math.min(maxStep, af + step);
+            }
+            direction[i] = dir;
+        }
+        return new ParabolicSarResult(sar, direction);
+    }
+
+    public record IchimokuResult(double[] tenkan, double[] kijun,
+            double[] senkouA, double[] senkouB) {
+    }
+
+    /**
+     * Ichimoku components at each bar.  The cloud is not displaced forward;
+     * this makes the values usable as a pure current-bar filter.
+     */
+    public static IchimokuResult ichimoku(double[] highs, double[] lows,
+            int tenkanPeriod, int kijunPeriod, int senkouBPeriod) {
+        int n = Math.min(highs == null ? 0 : highs.length, lows == null ? 0 : lows.length);
+        double[] tenkan = new double[n];
+        double[] kijun = new double[n];
+        double[] senkouA = new double[n];
+        double[] senkouB = new double[n];
+        java.util.Arrays.fill(tenkan, Double.NaN);
+        java.util.Arrays.fill(kijun, Double.NaN);
+        java.util.Arrays.fill(senkouA, Double.NaN);
+        java.util.Arrays.fill(senkouB, Double.NaN);
+        if (tenkanPeriod <= 0 || kijunPeriod <= 0 || senkouBPeriod <= 0) {
+            return new IchimokuResult(tenkan, kijun, senkouA, senkouB);
+        }
+        for (int i = 0; i < n; i++) {
+            if (i >= tenkanPeriod - 1) {
+                tenkan[i] = (highest(highs, i - tenkanPeriod + 1, i)
+                        + lowest(lows, i - tenkanPeriod + 1, i)) / 2.0;
+            }
+            if (i >= kijunPeriod - 1) {
+                kijun[i] = (highest(highs, i - kijunPeriod + 1, i)
+                        + lowest(lows, i - kijunPeriod + 1, i)) / 2.0;
+            }
+            if (!Double.isNaN(tenkan[i]) && !Double.isNaN(kijun[i])) {
+                senkouA[i] = (tenkan[i] + kijun[i]) / 2.0;
+            }
+            if (i >= senkouBPeriod - 1) {
+                senkouB[i] = (highest(highs, i - senkouBPeriod + 1, i)
+                        + lowest(lows, i - senkouBPeriod + 1, i)) / 2.0;
+            }
+        }
+        return new IchimokuResult(tenkan, kijun, senkouA, senkouB);
+    }
+
+    /** Stochastic oscillator calculated on the RSI series. */
+    public static StochasticResult stochasticRsi(double[] closes, int rsiPeriod,
+            int stochPeriod, int dPeriod) {
+        double[] rsi = rsiSeries(closes, rsiPeriod);
+        int n = rsi.length;
+        double[] k = new double[n];
+        java.util.Arrays.fill(k, Double.NaN);
+        if (rsiPeriod <= 0 || stochPeriod <= 0 || dPeriod <= 0 || n < rsiPeriod + stochPeriod) {
+            double[] d = new double[n];
+            java.util.Arrays.fill(d, Double.NaN);
+            return new StochasticResult(k, d);
+        }
+        for (int i = rsiPeriod + stochPeriod - 1; i < n; i++) {
+            double high = Double.NEGATIVE_INFINITY;
+            double low = Double.POSITIVE_INFINITY;
+            boolean valid = true;
+            for (int j = i - stochPeriod + 1; j <= i; j++) {
+                if (Double.isNaN(rsi[j])) {
+                    valid = false;
+                    break;
+                }
+                high = Math.max(high, rsi[j]);
+                low = Math.min(low, rsi[j]);
+            }
+            if (!valid) {
+                continue;
+            }
+            k[i] = high == low ? 50 : (rsi[i] - low) / (high - low) * 100.0;
+        }
+        double[] d = smaSeriesNaNSafe(k, dPeriod);
+        return new StochasticResult(k, d);
+    }
+
+    /** Williams %R. */
+    public static double[] williamsR(double[] highs, double[] lows, double[] closes, int period) {
+        int n = Math.min(highs == null ? 0 : highs.length,
+                Math.min(lows == null ? 0 : lows.length, closes == null ? 0 : closes.length));
+        double[] out = new double[n];
+        java.util.Arrays.fill(out, Double.NaN);
+        if (period <= 0 || n < period) {
+            return out;
+        }
+        for (int i = period - 1; i < n; i++) {
+            double high = highest(highs, i - period + 1, i);
+            double low = lowest(lows, i - period + 1, i);
+            double range = high - low;
+            out[i] = range == 0 ? -50 : -100.0 * (high - closes[i]) / range;
+        }
+        return out;
+    }
+
+    /** Money Flow Index. */
+    public static double[] mfi(double[] highs, double[] lows, double[] closes,
+            double[] volumes, int period) {
+        int n = Math.min(highs == null ? 0 : highs.length,
+                Math.min(lows == null ? 0 : lows.length,
+                        Math.min(closes == null ? 0 : closes.length,
+                                volumes == null ? 0 : volumes.length)));
+        double[] out = new double[n];
+        java.util.Arrays.fill(out, Double.NaN);
+        if (period <= 0 || n < period + 1) {
+            return out;
+        }
+        double[] typical = new double[n];
+        for (int i = 0; i < n; i++) {
+            typical[i] = (highs[i] + lows[i] + closes[i]) / 3.0;
+        }
+        for (int i = period; i < n; i++) {
+            double positive = 0;
+            double negative = 0;
+            for (int j = i - period + 1; j <= i; j++) {
+                double flow = typical[j] * volumes[j];
+                if (typical[j] > typical[j - 1]) {
+                    positive += flow;
+                } else if (typical[j] < typical[j - 1]) {
+                    negative += flow;
+                }
+            }
+            if (positive == 0 && negative == 0) {
+                out[i] = 50;
+            } else if (negative == 0) {
+                out[i] = 100;
+            } else if (positive == 0) {
+                out[i] = 0;
+            } else {
+                out[i] = 100.0 - 100.0 / (1.0 + positive / negative);
+            }
+        }
+        return out;
+    }
+
+    /** Awesome Oscillator: SMA(median price, fast) - SMA(median price, slow). */
+    public static double[] awesomeOscillator(double[] highs, double[] lows, int fast, int slow) {
+        double[] median = medianPriceSeries(highs, lows);
+        double[] fastSma = smaSeries(median, fast);
+        double[] slowSma = smaSeries(median, slow);
+        double[] out = new double[median.length];
+        java.util.Arrays.fill(out, Double.NaN);
+        for (int i = 0; i < median.length; i++) {
+            if (!Double.isNaN(fastSma[i]) && !Double.isNaN(slowSma[i])) {
+                out[i] = fastSma[i] - slowSma[i];
+            }
+        }
+        return out;
+    }
+
+    public record KeltnerResult(double middle, double upper, double lower) {
+    }
+
+    /** Keltner channel using an EMA middle line and ATR envelope. */
+    public static KeltnerResult keltner(double[] highs, double[] lows, double[] closes,
+            int emaPeriod, int atrPeriod, double multiplier) {
+        int n = Math.min(highs == null ? 0 : highs.length,
+                Math.min(lows == null ? 0 : lows.length, closes == null ? 0 : closes.length));
+        if (n == 0 || emaPeriod <= 0 || atrPeriod <= 0 || multiplier <= 0) {
+            return new KeltnerResult(Double.NaN, Double.NaN, Double.NaN);
+        }
+        double[] ema = emaSeries(closes, emaPeriod);
+        double[] atr = atrSeries(highs, lows, closes, atrPeriod);
+        double middle = ema[n - 1];
+        double band = atr[n - 1];
+        if (Double.isNaN(middle) || Double.isNaN(band)) {
+            return new KeltnerResult(Double.NaN, Double.NaN, Double.NaN);
+        }
+        return new KeltnerResult(middle, middle + multiplier * band, middle - multiplier * band);
+    }
+
+    public record PivotResult(double pivot, double support1, double resistance1) {
+    }
+
+    /** Classic floor-trader pivot levels from one completed bar. */
+    public static PivotResult pivot(double high, double low, double close) {
+        double pivot = (high + low + close) / 3.0;
+        return new PivotResult(pivot, 2 * pivot - high, 2 * pivot - low);
+    }
+
+    /** Chaikin Money Flow. */
+    public static double[] cmfSeries(double[] highs, double[] lows, double[] closes,
+            double[] volumes, int period) {
+        int n = Math.min(highs == null ? 0 : highs.length,
+                Math.min(lows == null ? 0 : lows.length,
+                        Math.min(closes == null ? 0 : closes.length,
+                                volumes == null ? 0 : volumes.length)));
+        double[] out = new double[n];
+        java.util.Arrays.fill(out, Double.NaN);
+        if (period <= 0 || n < period) {
+            return out;
+        }
+        for (int i = period - 1; i < n; i++) {
+            double moneyFlowVolume = 0;
+            double volumeSum = 0;
+            for (int j = i - period + 1; j <= i; j++) {
+                double range = highs[j] - lows[j];
+                double multiplier = range == 0 ? 0
+                        : ((closes[j] - lows[j]) - (highs[j] - closes[j])) / range;
+                moneyFlowVolume += multiplier * volumes[j];
+                volumeSum += volumes[j];
+            }
+            out[i] = volumeSum == 0 ? 0 : moneyFlowVolume / volumeSum;
+        }
+        return out;
+    }
+
+    /** EMA-smoothed force index. */
+    public static double[] forceIndexSeries(double[] closes, double[] volumes, int period) {
+        int n = Math.min(closes == null ? 0 : closes.length,
+                volumes == null ? 0 : volumes.length);
+        double[] raw = new double[n];
+        for (int i = 1; i < n; i++) {
+            raw[i] = (closes[i] - closes[i - 1]) * volumes[i];
+        }
+        return emaSeries(raw, period);
+    }
+
+    private static double highest(double[] values, int start, int end) {
+        double high = Double.NEGATIVE_INFINITY;
+        for (int i = start; i <= end; i++) {
+            high = Math.max(high, values[i]);
+        }
+        return high;
+    }
+
+    private static double lowest(double[] values, int start, int end) {
+        double low = Double.POSITIVE_INFINITY;
+        for (int i = start; i <= end; i++) {
+            low = Math.min(low, values[i]);
+        }
+        return low;
+    }
 }

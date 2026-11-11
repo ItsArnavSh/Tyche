@@ -12,16 +12,7 @@ public class F_RSI extends BaseFunction {
     private static final double OVERSOLD = 30;
 
     @Override
-    public void Boot(StartParams params) {
-        evaluate(params);
-    }
-
-    @Override
-    public void Roll(StartParams params) {
-        evaluate(params);
-    }
-
-    private void evaluate(StartParams params) {
+    protected void evaluate(StartParams params) {
         List<Candle> candles = candles(params);
         if (candles.size() < PERIOD + 2) {
             return;
@@ -38,5 +29,10 @@ public class F_RSI extends BaseFunction {
         if (prev < OVERSOLD && current >= OVERSOLD) {
             emit(params, 0.78, String.format("RSI%d exited oversold (%.1f -> %.1f)", PERIOD, prev, current));
         }
+    }
+
+    @Override
+    public String family() {
+        return "momentum";
     }
 }

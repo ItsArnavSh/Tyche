@@ -15,16 +15,7 @@ public class F_RSI_Divergence extends BaseFunction {
     private static final int LOOKBACK = 30;
 
     @Override
-    public void Boot(StartParams params) {
-        evaluate(params);
-    }
-
-    @Override
-    public void Roll(StartParams params) {
-        evaluate(params);
-    }
-
-    private void evaluate(StartParams params) {
+    protected void evaluate(StartParams params) {
         List<Candle> candles = candles(params);
         if (candles.size() < LOOKBACK + RSI_PERIOD) {
             return;
@@ -61,5 +52,10 @@ public class F_RSI_Divergence extends BaseFunction {
             emit(params, 0.76, String.format("bullish RSI divergence (price %.2f < %.2f, RSI %.1f > %.1f)",
                     closes[recentLowIdx], closes[priorLowIdx], rsi[recentLowIdx], rsi[priorLowIdx]));
         }
+    }
+
+    @Override
+    public String family() {
+        return "momentum";
     }
 }

@@ -11,16 +11,7 @@ public class F_VWAP extends BaseFunction {
     private static final int PERIOD = 50;
 
     @Override
-    public void Boot(StartParams params) {
-        evaluate(params);
-    }
-
-    @Override
-    public void Roll(StartParams params) {
-        evaluate(params);
-    }
-
-    private void evaluate(StartParams params) {
+    protected void evaluate(StartParams params) {
         List<Candle> candles = candles(params);
         if (candles.size() < PERIOD + 1) {
             return;
@@ -44,5 +35,10 @@ public class F_VWAP extends BaseFunction {
         if (closes[n - 2] <= previousVwap && closes[n - 1] > currentVwap) {
             emit(params, 0.68, String.format("price reclaimed VWAP %.2f", currentVwap));
         }
+    }
+
+    @Override
+    public String family() {
+        return "mean_reversion";
     }
 }

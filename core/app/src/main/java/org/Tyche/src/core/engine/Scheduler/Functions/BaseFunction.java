@@ -14,13 +14,34 @@ public abstract class BaseFunction {
 
     protected static final Logger logger = LoggerFactory.getLogger(BaseFunction.class);
 
-    abstract public void Boot(StartParams params);
+    /**
+     * Boot runs after a full history bootstrap.  By default it evaluates the
+     * same latest-bar logic as a roll, but strategies can override it when
+     * they need extra warm-up work.
+     */
+    public void Boot(StartParams params) {
+        evaluate(params);
+    }
 
-    abstract public void Roll(StartParams params);
+    /** Roll runs after a single incremental candle update. */
+    public void Roll(StartParams params) {
+        evaluate(params);
+    }
+
+    /** Strategy evaluation for the latest completed candle. */
+    protected abstract void evaluate(StartParams params);
 
     /** Stable strategy identifier used for signal de-duplication and metrics. */
     public String name() {
         return getClass().getSimpleName().replace("F_", "").toLowerCase();
+    }
+
+    /**
+     * Coarse strategy family.  The gateway uses this to stop correlated
+     * signals from being counted as independent confirmation.
+     */
+    public String family() {
+        return "technical";
     }
 
     /** Minimum gap between signals for this strategy/ticker. */
@@ -44,7 +65,7 @@ public abstract class BaseFunction {
             return false;
         }
         Signal sig = new Signal(params.context.ticker.name, confidence, params.context.ticker.size,
-                Instant.now(), name());
+                Instant.now(), name(), family());
         boolean queued = params.repo.redis.send_signal(sig);
         if (queued) {
             logger.debug("[{}] {} {}: {}", name(), params.context.ticker.name, reason, sig);
