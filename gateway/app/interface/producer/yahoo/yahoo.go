@@ -52,7 +52,7 @@ type Producer struct {
 }
 
 const (
-	sparkBatchSize = 100
+	sparkBatchSize = 20
 	// Per-symbol chart fallback is deliberately bounded. For a large universe
 	// it is better to wait for the next batched spark tick than to fire one
 	// HTTP request per ticker.
