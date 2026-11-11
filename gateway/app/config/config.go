@@ -25,7 +25,19 @@ type DecisionSettings struct {
 // Config is the fully resolved gateway configuration.
 type Config struct {
 	DataSource string
-	Symbols    []string
+	// Symbols is an explicit TYCHE_SYMBOLS override. When empty, main resolves
+	// the universe via the universe package before constructing the server.
+	Symbols []string
+
+	// Universe selects the automatic NSE index constituent list. Empty means
+	// the default for real data sources; "off" keeps the fallback list.
+	Universe      string
+	UniverseURL   string
+	UniverseLimit int
+	// FallbackSymbols is used when the universe cannot be fetched.
+	FallbackSymbols []string
+	// UniverseSource is filled after resolution (env, nifty500, fallback, ...).
+	UniverseSource string
 
 	CoreAddr      string
 	RedisAddr     string
@@ -34,6 +46,7 @@ type Config struct {
 	SignalQueue   string
 
 	BootCandleCount int
+	BootWorkers     int
 	RollInterval    time.Duration
 	DecisionEvery   time.Duration
 	MonitorEvery    time.Duration
@@ -56,15 +69,40 @@ type Config struct {
 	ShutdownWait time.Duration
 }
 
-// defaultSymbols is the single default universe. Ticker selection lives in the
-// Go data plane so the Java core never needs a symbol list.
+// defaultSymbols is the fallback universe. Ticker selection lives in the Go
+// data plane so the Java core never needs a symbol list.
 const defaultSymbols = "RELIANCE.NS,TCS.NS,HDFCBANK.NS,INFY.NS,ICICIBANK.NS,SBIN.NS,ITC.NS,LT.NS,BHARTIARTL.NS,HINDUNILVR.NS"
+
+// Default automatic universe for real market-data sources.
+const DefaultUniverse = "nifty500"
 
 // Load reads configuration from the process environment.
 func Load() Config {
+	dataSource := strings.ToLower(strings.TrimSpace(env("TYCHE_DATA_SOURCE", "yahoo")))
+
+	// Fake mode stays offline by default unless the operator explicitly asks
+	// for an automatic universe. Real sources default to the NIFTY 500 list.
+	selectedUniverse := strings.ToLower(strings.TrimSpace(env("TYCHE_UNIVERSE", "")))
+	if selectedUniverse == "" && dataSource != "fake" {
+		selectedUniverse = DefaultUniverse
+	}
+
+	universeLimit := envInt("TYCHE_UNIVERSE_LIMIT", 0)
+	if universeLimit < 0 {
+		universeLimit = 0
+	}
+	bootWorkers := envInt("TYCHE_BOOT_WORKERS", 4)
+	if bootWorkers < 1 {
+		bootWorkers = 1
+	}
+
 	return Config{
-		DataSource: strings.ToLower(strings.TrimSpace(env("TYCHE_DATA_SOURCE", "yahoo"))),
-		Symbols:    splitCSV(env("TYCHE_SYMBOLS", defaultSymbols)),
+		DataSource:      dataSource,
+		Symbols:         splitCSV(env("TYCHE_SYMBOLS", "")),
+		Universe:        selectedUniverse,
+		UniverseURL:     env("TYCHE_UNIVERSE_URL", ""),
+		UniverseLimit:   universeLimit,
+		FallbackSymbols: splitCSV(env("TYCHE_UNIVERSE_FALLBACK", defaultSymbols)),
 
 		CoreAddr:      env("TYCHE_CORE_ADDR", "localhost:50051"),
 		RedisAddr:     env("TYCHE_REDIS_ADDR", "localhost:6379"),
@@ -73,6 +111,7 @@ func Load() Config {
 		SignalQueue:   env("TYCHE_SIGNAL_QUEUE", "signal"),
 
 		BootCandleCount: envInt("TYCHE_BOOT_CANDLES", envInt("TYCHE_BOOT_CANDLE_COUNT", 300)),
+		BootWorkers:     bootWorkers,
 		RollInterval:    envDuration("TYCHE_ROLL_INTERVAL_MS", 5*time.Second),
 		DecisionEvery:   envDuration("TYCHE_DECISION_INTERVAL_MS", 5*time.Second),
 		MonitorEvery:    envDuration("TYCHE_MONITOR_INTERVAL_MS", 5*time.Second),

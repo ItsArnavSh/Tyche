@@ -82,6 +82,7 @@
 
 	interface Feed {
 		source: string;
+		universe?: string;
 		symbols: string[];
 		roll_interval_ms: number;
 		core_connected: boolean;
@@ -711,7 +712,7 @@
 							<h2 class="text-[10px] font-medium tracking-[0.18em] text-white/35 uppercase">
 								system health
 							</h2>
-							<span class="text-[10px] text-white/20">{feed?.source ?? '—'}</span>
+							<span class="text-[10px] text-white/20">{feed?.source ?? '—'}{feed?.universe ? ` · ${feed.universe}` : ''}</span>
 						</div>
 						<div class="mt-3 space-y-2">
 							<div class="flex items-center justify-between text-xs">

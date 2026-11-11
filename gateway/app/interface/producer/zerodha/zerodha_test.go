@@ -67,6 +67,7 @@ func newKiteProducer(t *testing.T, server *httptest.Server) *Producer {
 		Timeout:     2 * time.Second,
 		Retries:     1,
 		BootCandles: 10,
+		BootWorkers: 1,
 		RollEvery:   time.Second,
 	})
 	if err != nil {
@@ -122,6 +123,50 @@ func TestZerodhaRollUsesLTP(t *testing.T) {
 	}
 	if updates[0].Candle.Close != 1333.5 {
 		t.Fatalf("candle = %+v", updates[0].Candle)
+	}
+}
+
+func TestZerodhaLTPChunksLargeRequests(t *testing.T) {
+	var batchSizes []int
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/quote/ltp" {
+			http.NotFound(w, r)
+			return
+		}
+		keys := r.URL.Query()["i"]
+		batchSizes = append(batchSizes, len(keys))
+		data := make(map[string]any, len(keys))
+		for _, key := range keys {
+			data[key] = map[string]any{"last_price": 100.0}
+		}
+		json.NewEncoder(w).Encode(map[string]any{"status": "success", "data": data})
+	}))
+	defer server.Close()
+
+	p, err := New(Options{
+		Symbols:     []string{"RELIANCE"},
+		BaseURL:     server.URL,
+		APIKey:      "key",
+		AccessToken: "access",
+		Exchange:    "NSE",
+		Timeout:     2 * time.Second,
+		Retries:     1,
+		RollEvery:   time.Second,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	req := make([]entity.MonoCandle, 0, ltpBatchSize+5)
+	for i := 0; i < ltpBatchSize+5; i++ {
+		req = append(req, entity.MonoCandle{Name: fmt.Sprintf("S%03d", i), Size: entity.MIN1})
+	}
+	updates := p.RollRequest(req)
+	if len(batchSizes) != 2 || batchSizes[0] != ltpBatchSize || batchSizes[1] != 5 {
+		t.Fatalf("batch sizes = %v", batchSizes)
+	}
+	if len(updates) != len(req) {
+		t.Fatalf("updates = %d, want %d", len(updates), len(req))
 	}
 }
 

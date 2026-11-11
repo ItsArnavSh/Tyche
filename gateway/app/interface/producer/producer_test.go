@@ -71,3 +71,22 @@ func TestTradeInterfaceRequestBookkeeping(t *testing.T) {
 		t.Fatalf("input mutated: %v", all)
 	}
 }
+
+func TestChunkCandles(t *testing.T) {
+	items := BuildAllMonoCandles([]string{"A", "B", "C"})
+	chunks := chunkCandles(items, 5)
+	if len(chunks) != 3 {
+		t.Fatalf("chunks = %d", len(chunks))
+	}
+	for _, chunk := range chunks {
+		if len(chunk) != 5 {
+			t.Fatalf("chunk size = %d", len(chunk))
+		}
+	}
+	if got := chunkCandles(nil, 5); got != nil {
+		t.Fatalf("empty chunks = %v", got)
+	}
+	if got := chunkCandles(items, 0); len(got) != 1 || len(got[0]) != len(items) {
+		t.Fatalf("zero-size chunks = %v", got)
+	}
+}

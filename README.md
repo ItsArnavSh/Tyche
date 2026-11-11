@@ -11,7 +11,7 @@ Tyche is a fully autonomous, real-time, distributed, load-balanced trading bot. 
 ## Features
 
 - **One data-plane owner** — the Go gateway is the only component that talks to Yahoo Finance, Kite Connect, or the synthetic feed. The Java core never makes outbound market-data or broker calls.
-- **Real market data** — Yahoo Finance chart/spark endpoints by default; Zerodha Kite Connect v3 when credentials are supplied. The `fake` source remains available for offline demos.
+- **Real market data** — Yahoo Finance chart/spark endpoints by default; Zerodha Kite Connect v3 when credentials are supplied. The symbol universe is resolved automatically from NSE's official index-constituent CSVs (`nifty50` through `nifty500`, plus mid/small-cap indices), with `TYCHE_SYMBOLS` as an explicit override. The `fake` source remains available for offline demos.
 - **Autonomous loop** — bootstrap history → roll updates → indicators/signals → Redis signal queue → confidence/risk checks → paper fills → stop-loss/take-profit/time exits. No human input required.
 - **Cross-language boundary** — the single proto source lives in `gateway/proto/stockrec.proto`. Java stubs are generated from it and committed for clean-checkout builds.
 - **Live status API** — the Go gateway exposes an in-memory JSON snapshot of decisions, fills, cash, equity, open positions, closed trades, signals, and feed health. No separate monitoring service.
@@ -50,7 +50,7 @@ docker compose up --build
 - Status API: http://localhost:8080/api/status
 - Dashboard: http://localhost:5173
 
-The default universe is ten liquid NSE symbols, the default source is Yahoo, and the default mode is paper trading. Redis is required for gateway signal transport.
+The default data source is Yahoo, the default universe is the official NIFTY 500 constituent list (resolved automatically at startup), and the default mode is paper trading. Redis is required for gateway signal transport.
 
 ### Local development
 
@@ -81,7 +81,17 @@ Check the feed and live watchlist:
 curl -s http://localhost:8080/api/status | jq '.feed, .market'
 ```
 
-Edit `TYCHE_SYMBOLS` in `.env` to change the watchlist. Use `.NS` for NSE and `.BO` for BSE symbols. All execution remains paper-only; selecting a real data source changes the market data, not the ledger.
+The gateway resolves the symbol list automatically from NSE's official index-constituent CSV archive. `TYCHE_UNIVERSE=nifty500` is the default for real sources; `nifty50`, `nifty100`, `nifty200`, `niftynext50`, `niftymidcap150`, `niftysmallcap250`, and `niftylargemidcap250` are also supported. Set `TYCHE_SYMBOLS` to an explicit comma-separated list to override the universe for testing or a constrained run. Use `.NS` for NSE and `.BO` for BSE symbols. All execution remains paper-only; selecting a real data source changes the market data, not the ledger.
+
+Inspect the resolved list before starting a large run:
+
+```bash
+gateway/bin/tyche-gateway universe nifty500 | head
+# source=nifty500 symbols=496
+# or: make universe UNIVERSE=nifty50
+```
+
+NSE's index CSV is a membership list, not a market-cap ranking. Pick `nifty50`/`nifty100` when you want the largest, most liquid names; `nifty500` is the broadest built-in option. Public Yahoo Finance can throttle hundreds of history requests, so Kite Connect is the recommended source for full NIFTY 500 runs.
 
 Manual startup is still available:
 
@@ -107,6 +117,7 @@ make tmux-attach   # attach to an existing tyche session
 make tmux-kill     # stop the tyche session
 make test          # Java + Go + Python suites
 make test-dashboard  # dashboard type-check and production build
+make universe      # print the resolved NSE universe (UNIVERSE=nifty500)
 make backtest      # real-data backtest with the default universe
 make build         # installDist + gateway binary
 make proto         # regenerate Go and Java stubs from gateway/proto/stockrec.proto
@@ -143,7 +154,7 @@ It includes:
 - `closed_trades`: completed round trips with exit reason and holding time.
 - `signals`: recent Redis signals before aggregation, including strategy and candle size.
 - `market`: the live watchlist with prices plus family-aware aggregate and peak confidence.
-- `feed`: data source, symbols, core/Redis connectivity, last roll/boot, and missing-ticker diagnostics.
+- `feed`: data source, resolved universe source, symbols, core/Redis connectivity, last roll/boot, and missing-ticker diagnostics.
 - `stats` and `risk`: event counters and the active sizing/exit controls.
 
 The dashboard defaults to `http://<current-host>:8080/api/status`. Override it with `?api=http://host:port/api/status` if the gateway is behind a different host or proxy.
@@ -158,7 +169,26 @@ Set `TYCHE_DATA_SOURCE` **on the gateway only**. The Java core no longer reads a
 | `zerodha` / `kite` | Kite Connect v3 historical candles and batched LTP/OHLC quotes | API key, secret, daily access token |
 | `fake` | Deterministic synthetic candles for offline development | None |
 
-Yahoo's `/v7/finance/quote` endpoint now requires a crumb/cookie, so Tyche uses `/v8/finance/chart` for history and `/v8/finance/spark` for batched latest prices.
+Yahoo's `/v7/finance/quote` endpoint now requires a crumb/cookie, so Tyche uses `/v8/finance/chart` for history and `/v8/finance/spark` for batched latest prices. Spark requests and Kite LTP requests are chunked, and history downloads use a bounded worker pool (`TYCHE_BOOT_WORKERS`) so a larger universe does not serialise startup.
+
+### Automatic NSE universe
+
+The gateway resolves `TYCHE_UNIVERSE` before it starts the market-data producer. It downloads the official NSE archive CSV (no session cookie required), keeps only `Series == EQ` rows, and de-duplicates the symbols. The source is reported in the status feed as `universe`.
+
+NSE's newer JSON endpoint (`/api/equity-stock-indices?index=NIFTY%20500`) can return constituents sorted by traded value, but it is unofficial and requires a browser session cookie plus a referer. Tyche uses the official archive CSV because it is stable and works without a session.
+
+| `TYCHE_UNIVERSE` | Approx. EQ symbols | Notes |
+| --- | ---: | --- |
+| `nifty50` | 50 | Largest, most liquid names |
+| `niftynext50` | 50 | Next-tier large caps |
+| `nifty100` | 100 | NIFTY 50 + Next 50 |
+| `nifty200` | 200 | Large/mid-cap blend |
+| `nifty500` (default) | ~496 | Broad market; best with Kite |
+| `niftymidcap150` | ~150 | Mid caps |
+| `niftysmallcap250` | ~250 | Small caps |
+| `niftylargemidcap250` | ~250 | Large + mid caps |
+
+The resolver tries both `archives.nseindia.com` and `nsearchives.nseindia.com`. If both downloads fail, it falls back to `TYCHE_UNIVERSE_FALLBACK` (ten liquid NSE names by default) and logs the error, so an NSE outage does not prevent a constrained run. Set `TYCHE_UNIVERSE=off` to use the fallback list intentionally. `TYCHE_UNIVERSE_LIMIT` caps the fetched list after filtering, which is useful for smoke tests. With `TYCHE_DATA_SOURCE=fake`, the automatic universe is off by default so offline demos never touch the network; set `TYCHE_UNIVERSE` explicitly to simulate a real index with synthetic prices. The universe is NSE-specific, so keep `TYCHE_YAHOO_SUFFIX=.NS` (the default) when using the Yahoo source.
 
 ### Zerodha Kite Connect
 
@@ -228,7 +258,14 @@ The gateway reads market-data, execution, and status settings. The core reads on
 | Variable | Default | Used by | Meaning |
 | --- | --- | --- | --- |
 | `TYCHE_DATA_SOURCE` | `yahoo` | gateway | `yahoo`, `zerodha`, or `fake` |
-| `TYCHE_SYMBOLS` | 10 NSE names | gateway | Comma-separated universe (`.NS` suffixes supported) |
+| `TYCHE_UNIVERSE` | `nifty500` (real) | gateway | Auto NSE index (`nifty50` … `nifty500`, `niftymidcap150`, `niftysmallcap250`, `niftylargemidcap250`) or `off` |
+| `TYCHE_UNIVERSE_URL` | empty | gateway | Optional full CSV URL for a mirror or controlled run |
+| `TYCHE_UNIVERSE_LIMIT` | `0` | gateway | Cap the resolved symbol count; `0` keeps the full index |
+| `TYCHE_UNIVERSE_FALLBACK` | 10 NSE names | gateway | Symbols used when the NSE download fails |
+| `TYCHE_SYMBOLS` | empty | gateway | Explicit override; wins over `TYCHE_UNIVERSE` when set |
+| `TYCHE_BOOT_WORKERS` | `4` | gateway | Bounded parallel history downloads during boot |
+| `TYCHE_WORKER_THREADS` | available CPUs | core | Scheduler worker pool; raise for large universes |
+| `TYCHE_CACHE_MAX_CANDLES` | `1500` | core | Per-(symbol, timeframe) candle cache cap |
 | `TYCHE_CORE_ADDR` | `localhost:50051` | gateway | Java gRPC address |
 | `TYCHE_REDIS_ADDR` | `localhost:6379` | gateway | Redis address |
 | `TYCHE_REDIS_HOST` / `_PORT` | `localhost` / `6379` | core | Redis address |

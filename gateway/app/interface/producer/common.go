@@ -12,6 +12,10 @@ import (
 	"gateway/app/util/entity"
 )
 
+// bootBatchSize is 25 symbols x 5 candle sizes. It keeps each gRPC boot
+// message bounded while still amortising the call overhead for large universes.
+const bootBatchSize = 25 * 5
+
 // TradeInterface pumps market data from a Producer into the Java core.
 type TradeInterface struct {
 	lock     sync.Mutex
@@ -96,31 +100,17 @@ func (t *TradeInterface) IllDoTheTalking(ctx context.Context) {
 }
 
 func (t *TradeInterface) boot(ctx context.Context, req []entity.MonoCandle) {
-	histories := t.prod.BootRequest(req)
-	if len(histories) == 0 {
-		log.Println("[TradeInterface] boot produced no histories; wait for stale reboots")
+	if len(req) == 0 {
 		return
 	}
-	if err := t.client.SendBootRequest(ctx, histories); err != nil {
-		t.recordRoll(status.RollEvent{At: time.Now(), Updates: len(histories), Boot: true, Failed: true, ErrorMsg: err.Error()})
-		t.recordError("boot", err)
-		log.Printf("[TradeInterface] boot send failed: %v", err)
-		return
+	for _, chunk := range chunkCandles(req, bootBatchSize) {
+		t.sendBoot(ctx, chunk, "boot")
 	}
-	t.recordRoll(status.RollEvent{At: time.Now(), Updates: len(histories), Boot: true})
-	log.Printf("[TradeInterface] booted %d series for %d jobs", len(histories), len(req))
 }
 
 func (t *TradeInterface) reboot(ctx context.Context, missing []entity.MonoCandle) {
-	histories := t.prod.BootRequest(missing)
-	if len(histories) > 0 {
-		if err := t.client.SendBootRequest(ctx, histories); err != nil {
-			t.recordRoll(status.RollEvent{At: time.Now(), Updates: len(histories), Boot: true, Failed: true, ErrorMsg: err.Error()})
-			t.recordError("re-boot", err)
-			log.Printf("[TradeInterface] re-boot send failed: %v", err)
-		} else {
-			t.recordRoll(status.RollEvent{At: time.Now(), Updates: len(histories), Boot: true})
-		}
+	for _, chunk := range chunkCandles(missing, bootBatchSize) {
+		t.sendBoot(ctx, chunk, "re-boot")
 	}
 	t.lock.Lock()
 	defer t.lock.Unlock()
@@ -129,6 +119,22 @@ func (t *TradeInterface) reboot(ctx context.Context, missing []entity.MonoCandle
 			t.request = append(t.request, item)
 		}
 	}
+}
+
+func (t *TradeInterface) sendBoot(ctx context.Context, req []entity.MonoCandle, scope string) {
+	histories := t.prod.BootRequest(req)
+	if len(histories) == 0 {
+		log.Printf("[TradeInterface] %s produced no histories for %d jobs; wait for stale reboots", scope, len(req))
+		return
+	}
+	if err := t.client.SendBootRequest(ctx, histories); err != nil {
+		t.recordRoll(status.RollEvent{At: time.Now(), Updates: len(histories), Boot: true, Failed: true, ErrorMsg: err.Error()})
+		t.recordError(scope, err)
+		log.Printf("[TradeInterface] %s send failed: %v", scope, err)
+		return
+	}
+	t.recordRoll(status.RollEvent{At: time.Now(), Updates: len(histories), Boot: true})
+	log.Printf("[TradeInterface] %s: booted %d series for %d jobs", scope, len(histories), len(req))
 }
 
 func (t *TradeInterface) recordRoll(roll status.RollEvent) {
@@ -190,6 +196,21 @@ func removeCandles(all, rm []entity.MonoCandle) []entity.MonoCandle {
 		if !contains(rm, candidate) {
 			out = append(out, candidate)
 		}
+	}
+	return out
+}
+
+func chunkCandles(items []entity.MonoCandle, size int) [][]entity.MonoCandle {
+	if len(items) == 0 {
+		return nil
+	}
+	if size <= 0 || len(items) <= size {
+		return [][]entity.MonoCandle{items}
+	}
+	out := make([][]entity.MonoCandle, 0, (len(items)+size-1)/size)
+	for start := 0; start < len(items); start += size {
+		end := min(start+size, len(items))
+		out = append(out, items[start:end])
 	}
 	return out
 }

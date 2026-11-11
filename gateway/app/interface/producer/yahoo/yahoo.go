@@ -13,6 +13,7 @@ import (
 	"time"
 
 	"gateway/app/util/entity"
+	"gateway/app/util/workpool"
 )
 
 // Options configures the Yahoo Finance producer.
@@ -23,6 +24,7 @@ type Options struct {
 	Timeout     time.Duration
 	Retries     int
 	BootCandles int
+	BootWorkers int
 	RollEvery   time.Duration
 	HTTPClient  *http.Client
 }
@@ -30,9 +32,8 @@ type Options struct {
 // Producer fetches real NSE market data from Yahoo Finance.
 //
 // History comes from the public /v8/finance/chart endpoint.  Rolling prices
-// come from the batched /v8/finance/spark endpoint (one request for all
-// tickers); when spark is unavailable it falls back to per-symbol chart
-// requests with a short cache.
+// come from the batched /v8/finance/spark endpoint; requests are chunked so a
+// large NIFTY 500 universe does not put hundreds of tickers in one URL.
 type Producer struct {
 	mu          sync.RWMutex
 	symbols     []string
@@ -40,6 +41,7 @@ type Producer struct {
 	suffix      string
 	retries     int
 	bootCandles int
+	bootWorkers int
 	rollEvery   time.Duration
 	client      *http.Client
 	latest      map[string]float64
@@ -48,6 +50,14 @@ type Producer struct {
 
 	sparkFailures int
 }
+
+const (
+	sparkBatchSize = 100
+	// Per-symbol chart fallback is deliberately bounded. For a large universe
+	// it is better to wait for the next batched spark tick than to fire one
+	// HTTP request per ticker.
+	quoteFallbackLimit = 100
+)
 
 func New(opts Options) *Producer {
 	if opts.BaseURL == "" {
@@ -64,6 +74,9 @@ func New(opts Options) *Producer {
 	}
 	if opts.BootCandles <= 0 {
 		opts.BootCandles = 300
+	}
+	if opts.BootWorkers <= 0 {
+		opts.BootWorkers = 4
 	}
 	if opts.RollEvery <= 0 {
 		opts.RollEvery = 5 * time.Second
@@ -82,6 +95,7 @@ func New(opts Options) *Producer {
 		suffix:      opts.Suffix,
 		retries:     opts.Retries,
 		bootCandles: opts.BootCandles,
+		bootWorkers: opts.BootWorkers,
 		rollEvery:   opts.RollEvery,
 		client:      client,
 		latest:      make(map[string]float64),
@@ -105,33 +119,55 @@ func (p *Producer) GetCurrentValue(name string) float64 {
 
 func (p *Producer) BootRequest(req []entity.MonoCandle) []entity.TickerHistory {
 	grouped := group(req)
-	out := make([]entity.TickerHistory, 0, len(grouped))
-	for name, sizes := range grouped {
-		byInterval := make(map[string][]entity.CandleData)
-		for _, size := range sizes {
-			interval := intervalFor(size)
-			candles, cached := byInterval[interval]
-			if !cached {
-				var err error
-				candles, err = p.fetchChart(name, interval, rangeFor(interval))
-				if err != nil {
-					log.Printf("[yahoo] history %s %s failed: %v", name, interval, err)
-					continue
-				}
-				byInterval[interval] = candles
-			}
-			if len(candles) == 0 {
+	names := make([]string, 0, len(grouped))
+	for name := range grouped {
+		names = append(names, name)
+	}
+	sort.Strings(names)
+
+	results := workpool.Map(names, p.bootWorkers, func(name string) []entity.TickerHistory {
+		return p.bootSymbol(name, grouped[name])
+	})
+	out := make([]entity.TickerHistory, 0, len(names))
+	for _, histories := range results {
+		out = append(out, histories...)
+	}
+	sort.Slice(out, func(i, j int) bool {
+		if out[i].Name != out[j].Name {
+			return out[i].Name < out[j].Name
+		}
+		return out[i].History.Size < out[j].History.Size
+	})
+	return out
+}
+
+func (p *Producer) bootSymbol(name string, sizes []entity.CandleSize) []entity.TickerHistory {
+	out := make([]entity.TickerHistory, 0, len(sizes))
+	byInterval := make(map[string][]entity.CandleData)
+	for _, size := range sizes {
+		interval := intervalFor(size)
+		candles, cached := byInterval[interval]
+		if !cached {
+			var err error
+			candles, err = p.fetchChart(name, interval, rangeFor(interval))
+			if err != nil {
+				log.Printf("[yahoo] history %s %s failed: %v", name, interval, err)
+				byInterval[interval] = nil
 				continue
 			}
-			limit := p.bootCandles
-			start := 0
-			if len(candles) > limit {
-				start = len(candles) - limit
-			}
-			series := entity.CandleSeries{Size: size, Data: append([]entity.CandleData(nil), candles[start:]...)}
-			// TickerHistory carries exactly one series; emit one entry per size.
-			out = append(out, entity.TickerHistory{Name: name, History: series})
+			byInterval[interval] = candles
 		}
+		if len(candles) == 0 {
+			continue
+		}
+		limit := p.bootCandles
+		start := 0
+		if len(candles) > limit {
+			start = len(candles) - limit
+		}
+		series := entity.CandleSeries{Size: size, Data: append([]entity.CandleData(nil), candles[start:]...)}
+		// TickerHistory carries exactly one series; emit one entry per size.
+		out = append(out, entity.TickerHistory{Name: name, History: series})
 	}
 	return out
 }
@@ -199,7 +235,16 @@ func (p *Producer) refreshPrices(names []string) {
 		}
 	}
 
-	// Fallback: one chart request per symbol, individually rate limited.
+	// Fallback: one chart request per symbol, individually rate limited. This is
+	// only viable for a small watchlist; a 500-symbol run should keep retrying
+	// the batched spark endpoint instead of issuing a request per ticker.
+	if len(names) > quoteFallbackLimit {
+		log.Printf("[yahoo] spark unavailable; skipping per-symbol fallback for %d symbols", len(names))
+		p.mu.Lock()
+		p.lastRoll = time.Now()
+		p.mu.Unlock()
+		return
+	}
 	for _, name := range names {
 		p.mu.RLock()
 		lastQuote := p.lastQuote[name]
@@ -224,6 +269,16 @@ func (p *Producer) refreshPrices(names []string) {
 }
 
 func (p *Producer) fetchSpark(names []string) error {
+	for start := 0; start < len(names); start += sparkBatchSize {
+		end := min(start+sparkBatchSize, len(names))
+		if err := p.fetchSparkChunk(names[start:end]); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func (p *Producer) fetchSparkChunk(names []string) error {
 	symbols := make([]string, 0, len(names))
 	for _, name := range names {
 		symbols = append(symbols, p.yahooSymbol(name))

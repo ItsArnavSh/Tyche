@@ -135,6 +135,7 @@ func (s *Server) StatusSnapshot() status.Snapshot {
 	}
 	feed := status.Feed{
 		Source:          s.cfg.DataSource,
+		Universe:        s.cfg.UniverseSource,
 		Symbols:         append([]string(nil), s.cfg.Symbols...),
 		RollIntervalMS:  rollInterval.Milliseconds(),
 		CoreConnected:   coreConnected,

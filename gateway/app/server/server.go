@@ -77,8 +77,8 @@ func NewServer(ctx context.Context, cfg config.Config) (*Server, error) {
 	)
 	s.statusHTTP = status.NewHTTPServer(cfg.StatusAddr, s.StatusSnapshot)
 
-	log.Printf("[server] data source=%s symbols=%d cash=%.2f core=%s redis=%s status=%s",
-		cfg.DataSource, len(cfg.Symbols), cfg.InitialCash, cfg.CoreAddr, cfg.RedisAddr, cfg.StatusAddr)
+	log.Printf("[server] data source=%s universe=%s symbols=%d cash=%.2f core=%s redis=%s status=%s",
+		cfg.DataSource, cfg.UniverseSource, len(cfg.Symbols), cfg.InitialCash, cfg.CoreAddr, cfg.RedisAddr, cfg.StatusAddr)
 	return s, nil
 }
 

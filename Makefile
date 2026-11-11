@@ -4,6 +4,7 @@ SYMBOLS ?= RELIANCE.NS,TCS.NS,HDFCBANK.NS,INFY.NS,ICICIBANK.NS
 PERIOD ?= 2y
 STRATEGY ?= sma
 CASH ?= 100000
+UNIVERSE ?= nifty500
 
 # Local development tmux session.
 TMUX_BIN ?= tmux
@@ -14,7 +15,7 @@ ENV_PATH := $(abspath $(ENV_FILE))
 
 .PHONY: help build build-core build-gateway dashboard tmux tmux-attach tmux-kill \
 	test test-java test-go test-python test-dashboard proto backtest run up down \
-	logs clean
+	universe logs clean
 
 help:
 	@echo "Tyche targets:"
@@ -27,6 +28,7 @@ help:
 	@echo "  make tmux-attach  Attach to the Tyche tmux session"
 	@echo "  make tmux-kill    Stop the Tyche tmux session"
 	@echo "  make backtest     Run a real-data backtest (SYMBOLS/PERIOD/STRATEGY/CASH)"
+	@echo "  make universe     Print the resolved NSE universe (UNIVERSE=nifty500)"
 	@echo "  make run          Run core + gateway locally (needs Redis on localhost)"
 	@echo "  make up / down    Start or stop the docker compose stack"
 	@echo "  make clean        Remove build artifacts"
@@ -114,6 +116,9 @@ proto:
 backtest:
 	$(PYTHON) -m backtest --symbols "$(SYMBOLS)" --period "$(PERIOD)" \
 		--strategy "$(STRATEGY)" --cash "$(CASH)"
+
+universe:
+	cd gateway && go run . universe "$(UNIVERSE)"
 
 run:
 	@set -e; \

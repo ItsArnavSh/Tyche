@@ -72,6 +72,7 @@ type MarketSymbol struct {
 // Feed reports whether the Go-owned data path is healthy.
 type Feed struct {
 	Source          string     `json:"source"`
+	Universe        string     `json:"universe,omitempty"`
 	Symbols         []string   `json:"symbols"`
 	RollIntervalMS  int64      `json:"roll_interval_ms"`
 	CoreConnected   bool       `json:"core_connected"`

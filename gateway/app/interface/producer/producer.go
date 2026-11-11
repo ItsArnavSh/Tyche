@@ -40,6 +40,7 @@ func NewProducer(cfg config.Config) (Producer, error) {
 			Timeout:     cfg.HTTPTimeout,
 			Retries:     cfg.HTTPRetries,
 			BootCandles: cfg.BootCandleCount,
+			BootWorkers: cfg.BootWorkers,
 			RollEvery:   cfg.RollInterval,
 		})
 	case "yahoo", "":
@@ -50,6 +51,7 @@ func NewProducer(cfg config.Config) (Producer, error) {
 			Timeout:     cfg.HTTPTimeout,
 			Retries:     cfg.HTTPRetries,
 			BootCandles: cfg.BootCandleCount,
+			BootWorkers: cfg.BootWorkers,
 			RollEvery:   cfg.RollInterval,
 		}), nil
 	default:

@@ -120,6 +120,37 @@ func TestRollUsesBatchedSpark(t *testing.T) {
 	}
 }
 
+func TestRollChunksLargeSparkRequests(t *testing.T) {
+	var batchSizes []int
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/v8/finance/spark" {
+			http.NotFound(w, r)
+			return
+		}
+		symbols := strings.Split(r.URL.Query().Get("symbols"), ",")
+		batchSizes = append(batchSizes, len(symbols))
+		payload := make(map[string]any, len(symbols))
+		for _, symbol := range symbols {
+			payload[symbol] = map[string]any{"close": []any{100.0}, "fulldayPrice": 100.0}
+		}
+		json.NewEncoder(w).Encode(payload)
+	}))
+	defer server.Close()
+
+	p := New(Options{BaseURL: server.URL, Retries: 1, Timeout: 2 * time.Second, RollEvery: time.Second})
+	req := make([]entity.MonoCandle, 0, sparkBatchSize+5)
+	for i := 0; i < sparkBatchSize+5; i++ {
+		req = append(req, entity.MonoCandle{Name: fmt.Sprintf("S%03d", i), Size: entity.MIN1})
+	}
+	updates := p.RollRequest(req)
+	if len(batchSizes) != 2 || batchSizes[0] != sparkBatchSize || batchSizes[1] != 5 {
+		t.Fatalf("batch sizes = %v", batchSizes)
+	}
+	if len(updates) != len(req) {
+		t.Fatalf("updates = %d, want %d", len(updates), len(req))
+	}
+}
+
 func TestRollFallsBackToChartWhenSparkFails(t *testing.T) {
 	sparkCalls := 0
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {

@@ -17,6 +17,7 @@ import (
 	"time"
 
 	"gateway/app/util/entity"
+	"gateway/app/util/workpool"
 )
 
 // Options configures the Kite Connect producer.
@@ -30,6 +31,7 @@ type Options struct {
 	Timeout     time.Duration
 	Retries     int
 	BootCandles int
+	BootWorkers int
 	RollEvery   time.Duration
 	HTTPClient  *http.Client
 }
@@ -47,6 +49,7 @@ type Instrument struct {
 // historical and quote/LTP endpoints.
 type Producer struct {
 	mu            sync.RWMutex
+	rateMu        sync.Mutex
 	symbols       []string
 	baseURL       string
 	apiKey        string
@@ -55,6 +58,7 @@ type Producer struct {
 	exchange      string
 	retries       int
 	bootCandles   int
+	bootWorkers   int
 	rollEvery     time.Duration
 	client        *http.Client
 	instruments   map[string]Instrument
@@ -62,6 +66,8 @@ type Producer struct {
 	latest        map[string]float64
 	lastRequest   time.Time
 }
+
+const ltpBatchSize = 200
 
 func New(opts Options) (*Producer, error) {
 	if opts.APIKey == "" || opts.AccessToken == "" {
@@ -81,6 +87,9 @@ func New(opts Options) (*Producer, error) {
 	}
 	if opts.BootCandles <= 0 {
 		opts.BootCandles = 300
+	}
+	if opts.BootWorkers <= 0 {
+		opts.BootWorkers = 4
 	}
 	if opts.RollEvery <= 0 {
 		opts.RollEvery = 5 * time.Second
@@ -102,6 +111,7 @@ func New(opts Options) (*Producer, error) {
 		exchange:    strings.ToUpper(opts.Exchange),
 		retries:     opts.Retries,
 		bootCandles: opts.BootCandles,
+		bootWorkers: opts.BootWorkers,
 		rollEvery:   opts.RollEvery,
 		client:      client,
 		instruments: make(map[string]Instrument),
@@ -129,38 +139,60 @@ func (p *Producer) BootRequest(req []entity.MonoCandle) []entity.TickerHistory {
 		return nil
 	}
 	grouped := group(req)
-	out := make([]entity.TickerHistory, 0, len(grouped))
-	for name, sizes := range grouped {
+	names := make([]string, 0, len(grouped))
+	for name := range grouped {
+		names = append(names, name)
+	}
+	sort.Strings(names)
+
+	results := workpool.Map(names, p.bootWorkers, func(name string) []entity.TickerHistory {
 		instrument, ok := p.lookup(name)
 		if !ok {
 			log.Printf("[zerodha] unknown instrument %s", name)
-			continue
+			return nil
 		}
-		byInterval := make(map[string][]entity.CandleData)
-		for _, size := range sizes {
-			interval := intervalFor(size)
-			candles, cached := byInterval[interval]
-			if !cached {
-				var err error
-				candles, err = p.fetchHistory(instrument, interval, rangeFor(interval))
-				if err != nil {
-					log.Printf("[zerodha] history %s %s failed: %v", name, interval, err)
-					continue
-				}
-				byInterval[interval] = candles
-			}
-			if len(candles) == 0 {
+		return p.bootSymbol(name, instrument, grouped[name])
+	})
+	out := make([]entity.TickerHistory, 0, len(names))
+	for _, histories := range results {
+		out = append(out, histories...)
+	}
+	sort.Slice(out, func(i, j int) bool {
+		if out[i].Name != out[j].Name {
+			return out[i].Name < out[j].Name
+		}
+		return out[i].History.Size < out[j].History.Size
+	})
+	return out
+}
+
+func (p *Producer) bootSymbol(name string, instrument Instrument, sizes []entity.CandleSize) []entity.TickerHistory {
+	out := make([]entity.TickerHistory, 0, len(sizes))
+	byInterval := make(map[string][]entity.CandleData)
+	for _, size := range sizes {
+		interval := intervalFor(size)
+		candles, cached := byInterval[interval]
+		if !cached {
+			var err error
+			candles, err = p.fetchHistory(instrument, interval, rangeFor(interval))
+			if err != nil {
+				log.Printf("[zerodha] history %s %s failed: %v", name, interval, err)
+				byInterval[interval] = nil
 				continue
 			}
-			start := 0
-			if len(candles) > p.bootCandles {
-				start = len(candles) - p.bootCandles
-			}
-			series := entity.CandleSeries{Size: size, Data: append([]entity.CandleData(nil), candles[start:]...)}
-			out = append(out, entity.TickerHistory{Name: name, History: series})
-			if len(candles) > 0 {
-				p.setLatest(name, candles[len(candles)-1].Close)
-			}
+			byInterval[interval] = candles
+		}
+		if len(candles) == 0 {
+			continue
+		}
+		start := 0
+		if len(candles) > p.bootCandles {
+			start = len(candles) - p.bootCandles
+		}
+		series := entity.CandleSeries{Size: size, Data: append([]entity.CandleData(nil), candles[start:]...)}
+		out = append(out, entity.TickerHistory{Name: name, History: series})
+		if len(candles) > 0 {
+			p.setLatest(name, candles[len(candles)-1].Close)
 		}
 	}
 	return out
@@ -205,6 +237,16 @@ func (p *Producer) refreshPrices(names []string) {
 	if len(names) == 0 {
 		return
 	}
+	for start := 0; start < len(names); start += ltpBatchSize {
+		end := min(start+ltpBatchSize, len(names))
+		if err := p.refreshPricesChunk(names[start:end]); err != nil {
+			log.Printf("[zerodha] LTP batch failed: %v", err)
+			return
+		}
+	}
+}
+
+func (p *Producer) refreshPricesChunk(names []string) error {
 	query := make([]string, 0, len(names))
 	for _, name := range names {
 		query = append(query, "i="+url.QueryEscape(p.quoteKey(name)))
@@ -212,8 +254,7 @@ func (p *Producer) refreshPrices(names []string) {
 	endpoint := p.baseURL + "/quote/ltp?" + strings.Join(query, "&")
 	body, err := p.get(endpoint)
 	if err != nil {
-		log.Printf("[zerodha] LTP batch failed: %v", err)
-		return
+		return err
 	}
 	var payload struct {
 		Status string `json:"status"`
@@ -222,8 +263,7 @@ func (p *Producer) refreshPrices(names []string) {
 		} `json:"data"`
 	}
 	if err := json.Unmarshal(body, &payload); err != nil {
-		log.Printf("[zerodha] decode LTP: %v", err)
-		return
+		return fmt.Errorf("decode LTP: %w", err)
 	}
 	for _, name := range names {
 		key := p.quoteKey(name)
@@ -240,6 +280,7 @@ func (p *Producer) refreshPrices(names []string) {
 			}
 		}
 	}
+	return nil
 }
 
 func (p *Producer) quoteKey(name string) string {
@@ -373,17 +414,16 @@ func (p *Producer) get(endpoint string) ([]byte, error) {
 	return nil, lastErr
 }
 
-// waitTurn keeps requests below Kite's 10 requests/second limit.
+// waitTurn keeps requests below Kite's 10 requests/second limit. It uses a
+// dedicated mutex so concurrent history downloads serialise their request
+// slots without blocking quote/cache reads on the state mutex.
 func (p *Producer) waitTurn() {
-	p.mu.Lock()
-	wait := 120*time.Millisecond - time.Since(p.lastRequest)
-	if wait > 0 {
-		p.mu.Unlock()
+	p.rateMu.Lock()
+	defer p.rateMu.Unlock()
+	if wait := 120*time.Millisecond - time.Since(p.lastRequest); wait > 0 {
 		time.Sleep(wait)
-		p.mu.Lock()
 	}
 	p.lastRequest = time.Now()
-	p.mu.Unlock()
 }
 
 // LoginURL is the one-time Kite Connect login URL used to obtain a request
