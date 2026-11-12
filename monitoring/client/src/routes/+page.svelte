@@ -123,9 +123,11 @@
 		min_confidence: number;
 		max_positions: number;
 		max_position_fraction: number;
+		cash_reserve_fraction: number;
 		stop_loss_percent: number;
 		take_profit_percent: number;
 		hold_duration_ms: number;
+		signal_loss_grace_ms: number;
 		rebuy_cooldown_ms: number;
 	}
 
@@ -930,6 +932,14 @@
 							<div class="text-right">
 								<p class="text-white/25">re-entry lock</p>
 								<p class="mt-0.5 tabular-nums text-white/60">{risk ? duration(risk.rebuy_cooldown_ms / 1000) : '—'}</p>
+							</div>
+							<div>
+								<p class="text-white/25">signal exit</p>
+								<p class="mt-0.5 tabular-nums text-white/60">{risk ? duration(risk.signal_loss_grace_ms / 1000) : '—'}</p>
+							</div>
+							<div class="text-right">
+								<p class="text-white/25">cash reserve</p>
+								<p class="mt-0.5 tabular-nums text-white/60">{((risk?.cash_reserve_fraction ?? 0) * 100).toFixed(0)}%</p>
 							</div>
 						</div>
 					</section>

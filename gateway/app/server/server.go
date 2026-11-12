@@ -59,8 +59,8 @@ func NewServer(ctx context.Context, cfg config.Config) (*Server, error) {
 
 	s.ledger = paper.NewPaperTradeWithFees(cfg.InitialCash, cfg.PaperFeeBPS)
 	s.bucket = bucket.NewBucket(s.producer)
-	s.monitor = monitor.NewTradeMonitorWithInterval(
-		s.ledger, s.bucket, cfg.MonitorEvery, s.status,
+	s.monitor = monitor.NewTradeMonitorWithPolicy(
+		s.ledger, s.bucket, cfg.MonitorEvery, cfg.Decision.SignalLossGrace, s.status,
 	)
 	s.signals = make(chan entity.Signal, 1024)
 	s.tradeIface = producer.NewTradeInterface(s.grpc, s.producer, s.status)
@@ -73,6 +73,7 @@ func NewServer(ctx context.Context, cfg config.Config) (*Server, error) {
 			Settings: cfg.Decision,
 			Interval: cfg.DecisionEvery,
 			Recorder: s.status,
+			Equity:   s.portfolioEquity,
 		},
 	)
 	s.statusHTTP = status.NewHTTPServer(cfg.StatusAddr, s.StatusSnapshot)
@@ -80,6 +81,27 @@ func NewServer(ctx context.Context, cfg config.Config) (*Server, error) {
 	log.Printf("[server] data source=%s universe=%s symbols=%d cash=%.2f core=%s redis=%s status=%s",
 		cfg.DataSource, cfg.UniverseSource, len(cfg.Symbols), cfg.InitialCash, cfg.CoreAddr, cfg.RedisAddr, cfg.StatusAddr)
 	return s, nil
+}
+
+// portfolioEquity marks open holdings at the current quote so position sizing
+// can use the whole account value rather than only the remaining cash.
+func (s *Server) portfolioEquity() float64 {
+	if s.ledger == nil {
+		return 0
+	}
+	snapshot := s.ledger.Snapshot()
+	equity := snapshot.Cash
+	for _, holding := range snapshot.Positions {
+		price := 0.0
+		if s.producer != nil {
+			price = s.producer.GetCurrentValue(holding.Ticker)
+		}
+		if price <= 0 {
+			price = holding.AvgPrice
+		}
+		equity += price * float64(holding.Quantity)
+	}
+	return equity
 }
 
 func (s *Server) BootServer(ctx context.Context) error {

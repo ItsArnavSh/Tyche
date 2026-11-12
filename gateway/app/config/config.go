@@ -16,9 +16,11 @@ type DecisionSettings struct {
 	MinConfidence       float64
 	MaxPositions        int
 	MaxPositionFraction float64
+	CashReserveFraction float64
 	StopLossPercent     float64
 	TakeProfitPercent   float64
 	HoldDuration        time.Duration
+	SignalLossGrace     time.Duration
 	RebuyCooldown       time.Duration
 }
 
@@ -132,11 +134,13 @@ func Load() Config {
 		StatusAddr:  env("TYCHE_STATUS_ADDR", ":8080"),
 		Decision: DecisionSettings{
 			MinConfidence:       envFloat("TYCHE_MIN_CONFIDENCE", 0.70),
-			MaxPositions:        envInt("TYCHE_MAX_POSITIONS", 5),
+			MaxPositions:        envInt("TYCHE_MAX_POSITIONS", 10),
 			MaxPositionFraction: envFloat("TYCHE_MAX_POSITION_FRACTION", 0.15),
+			CashReserveFraction: envFloat("TYCHE_CASH_RESERVE_PCT", 0.02),
 			StopLossPercent:     envFloat("TYCHE_STOP_LOSS_PCT", 0.05),
 			TakeProfitPercent:   envFloat("TYCHE_TAKE_PROFIT_PCT", 0.10),
-			HoldDuration:        envDuration("TYCHE_HOLD_MS", 24*time.Hour),
+			HoldDuration:        envDuration("TYCHE_HOLD_MS", 4*time.Hour),
+			SignalLossGrace:     envDuration("TYCHE_SIGNAL_LOSS_GRACE_MS", 5*time.Minute),
 			RebuyCooldown:       envDuration("TYCHE_REBUY_COOLDOWN_MS", 5*time.Minute),
 		},
 		ShutdownWait: envDuration("TYCHE_SHUTDOWN_GRACE_MS", 5*time.Second),

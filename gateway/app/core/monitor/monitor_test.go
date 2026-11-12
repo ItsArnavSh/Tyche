@@ -22,6 +22,16 @@ func setupMonitor(t *testing.T) (*TradeMonitor, *paper.PaperTrade, *fakeval.Fake
 	return m, ledger, prod, b
 }
 
+func setupSignalLossMonitor(t *testing.T, grace time.Duration) (*TradeMonitor, *paper.PaperTrade, *fakeval.FakeValGen, *bucket.Bucket) {
+	t.Helper()
+	prod := fakeval.NewFakeValGenWithSymbols([]string{"A"}, 10, 100)
+	prod.SetPrice("A", 100)
+	b := bucket.NewBucket(prod)
+	ledger := paper.NewPaperTrade(100_000)
+	m := NewTradeMonitorWithPolicy(ledger, b, 5*time.Second, grace)
+	return m, ledger, prod, b
+}
+
 func buy(t *testing.T, ledger *paper.PaperTrade, instruction entity.TransactionInstruction) {
 	t.Helper()
 	if err := ledger.Process(instruction); err != nil {
@@ -164,6 +174,81 @@ func TestMonitorIgnoresInvalidPrice(t *testing.T) {
 	m.CheckPositions()
 	if m.ActivePositionCount() != 1 {
 		t.Fatal("position sold on invalid price")
+	}
+}
+
+func TestMonitorExitsAfterSignalLossGrace(t *testing.T) {
+	m, ledger, prod, _ := setupSignalLossMonitor(t, 5*time.Minute)
+	now := time.Now()
+	m.now = func() time.Time { return now }
+
+	position := entity.TransactionInstruction{
+		Ticker: "A", Action: entity.BUY, Quantity: 1, Price: 100,
+		Confidence: 0.9, MinValSell: 10, SellAfter: now.Add(4 * time.Hour),
+	}
+	buy(t, ledger, position)
+	m.AddPosition(position)
+	prod.SetPrice("A", 100)
+
+	m.CheckPositions() // starts the missing-signal timer
+	if m.ActivePositionCount() != 1 {
+		t.Fatal("position sold on the first missing-signal check")
+	}
+
+	now = now.Add(4 * time.Minute)
+	m.CheckPositions()
+	if m.ActivePositionCount() != 1 {
+		t.Fatal("position sold before the signal-loss grace elapsed")
+	}
+
+	now = now.Add(2 * time.Minute)
+	m.CheckPositions()
+	if m.ActivePositionCount() != 0 {
+		t.Fatal("position was not sold after the signal-loss grace")
+	}
+	trades := m.ClosedTrades()
+	if len(trades) != 1 || trades[0].Reason != "no live signal" {
+		t.Fatalf("closed trades = %+v", trades)
+	}
+}
+
+func TestMonitorSignalLossTimerResetsWhenSignalReturns(t *testing.T) {
+	m, ledger, prod, b := setupSignalLossMonitor(t, 5*time.Minute)
+	now := time.Now()
+	m.now = func() time.Time { return now }
+
+	position := entity.TransactionInstruction{
+		Ticker: "A", Action: entity.BUY, Quantity: 1, Price: 100,
+		Confidence: 0.9, MinValSell: 10, SellAfter: now.Add(4 * time.Hour),
+	}
+	buy(t, ledger, position)
+	m.AddPosition(position)
+	prod.SetPrice("A", 100)
+
+	m.CheckPositions() // starts the timer
+	now = now.Add(4 * time.Minute)
+
+	b.SignalBucket(entity.Signal{
+		Name: "A", Strategy: "rsi", Size: entity.HOUR1,
+		Confidence: 0.9, Time: now,
+	})
+	m.CheckPositions() // live signal resets the timer
+	if m.ActivePositionCount() != 1 {
+		t.Fatal("position sold while a live signal existed")
+	}
+
+	b.Reset()
+	m.CheckPositions() // starts a fresh timer
+	now = now.Add(4 * time.Minute)
+	m.CheckPositions()
+	if m.ActivePositionCount() != 1 {
+		t.Fatal("position sold too soon after the timer restarted")
+	}
+
+	now = now.Add(2 * time.Minute)
+	m.CheckPositions()
+	if m.ActivePositionCount() != 0 {
+		t.Fatal("position was not sold after the restarted grace elapsed")
 	}
 }
 

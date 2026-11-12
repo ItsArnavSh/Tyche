@@ -116,8 +116,10 @@ type Risk struct {
 	MinConfidence       float64 `json:"min_confidence"`
 	MaxPositions        int     `json:"max_positions"`
 	MaxPositionFraction float64 `json:"max_position_fraction"`
+	CashReserveFraction float64 `json:"cash_reserve_fraction"`
 	StopLossPercent     float64 `json:"stop_loss_percent"`
 	TakeProfitPercent   float64 `json:"take_profit_percent"`
 	HoldDurationMS      int64   `json:"hold_duration_ms"`
+	SignalLossGraceMS   int64   `json:"signal_loss_grace_ms"`
 	RebuyCooldownMS     int64   `json:"rebuy_cooldown_ms"`
 }

@@ -34,19 +34,23 @@ type Stats struct {
 }
 
 // TradeMonitor watches open positions and exits them on stop-loss, take-profit,
-// time limits, or a material collapse in aggregate signal confidence.
+// time limits, a material collapse in signal confidence, or a sustained loss of
+// all live signals for the ticker.
 //
 // All exported methods are safe for concurrent use: the decision layer adds
 // positions while the monitor goroutine evaluates and removes them.
 type TradeMonitor struct {
-	mu            sync.Mutex
-	transaction   transaction.TransactionHandler
-	bucket        *bucket.Bucket
-	positions     map[string]entity.TransactionInstruction
-	closed        []ClosedTrade
-	stats         Stats
-	checkInterval time.Duration
-	recorder      status.Recorder
+	mu              sync.Mutex
+	transaction     transaction.TransactionHandler
+	bucket          *bucket.Bucket
+	positions       map[string]entity.TransactionInstruction
+	missingSince    map[string]time.Time
+	closed          []ClosedTrade
+	stats           Stats
+	checkInterval   time.Duration
+	signalLossGrace time.Duration
+	now             func() time.Time
+	recorder        status.Recorder
 }
 
 func NewTradeMonitor(th transaction.TransactionHandler, cb *bucket.Bucket, recorders ...status.Recorder) *TradeMonitor {
@@ -59,19 +63,38 @@ func NewTradeMonitorWithInterval(
 	interval time.Duration,
 	recorders ...status.Recorder,
 ) *TradeMonitor {
+	return NewTradeMonitorWithPolicy(th, cb, interval, 0, recorders...)
+}
+
+// NewTradeMonitorWithPolicy adds the signal-loss grace period.  A zero grace
+// disables the signal-loss exit, which keeps the older constructors behaviour
+// unchanged for callers that do not opt in.
+func NewTradeMonitorWithPolicy(
+	th transaction.TransactionHandler,
+	cb *bucket.Bucket,
+	interval time.Duration,
+	signalLossGrace time.Duration,
+	recorders ...status.Recorder,
+) *TradeMonitor {
 	if interval <= 0 {
 		interval = 5 * time.Second
+	}
+	if signalLossGrace < 0 {
+		signalLossGrace = 0
 	}
 	var recorder status.Recorder
 	if len(recorders) > 0 {
 		recorder = recorders[0]
 	}
 	return &TradeMonitor{
-		transaction:   th,
-		bucket:        cb,
-		positions:     make(map[string]entity.TransactionInstruction),
-		checkInterval: interval,
-		recorder:      recorder,
+		transaction:     th,
+		bucket:          cb,
+		positions:       make(map[string]entity.TransactionInstruction),
+		missingSince:    make(map[string]time.Time),
+		checkInterval:   interval,
+		signalLossGrace: signalLossGrace,
+		now:             time.Now,
+		recorder:        recorder,
 	}
 }
 
@@ -89,6 +112,7 @@ func (m *TradeMonitor) AddPosition(position entity.TransactionInstruction) bool 
 		return false
 	}
 	m.positions[position.Ticker] = position
+	delete(m.missingSince, position.Ticker)
 	log.Printf("[TradeMonitor] added position %s qty=%d price=%.4f target=%.4f stop=%.4f",
 		position.Ticker, position.Quantity, position.Price, position.MaxVal, position.MinValSell)
 	return true
@@ -184,13 +208,16 @@ func (m *TradeMonitor) currentPrice(ticker string) (float64, bool) {
 }
 
 func (m *TradeMonitor) shouldSell(position entity.TransactionInstruction, currentPrice float64) (bool, string) {
+	now := m.now()
 	if position.MaxVal > 0 && currentPrice >= position.MaxVal {
 		return true, "take profit target reached"
 	}
 	if position.MinValSell > 0 && currentPrice <= position.MinValSell {
 		return true, "stop loss triggered"
 	}
-	if !position.SellAfter.IsZero() && time.Now().After(position.SellAfter) {
+	// Compare wall-clock values: monotonic readings pause across host suspend,
+	// which would let a position outlive its hold deadline after a long sleep.
+	if !position.SellAfter.IsZero() && now.Round(0).After(position.SellAfter.Round(0)) {
 		return true, "time limit exceeded"
 	}
 	// Compare against the strongest raw signal, not the time-decayed aggregate:
@@ -202,7 +229,35 @@ func (m *TradeMonitor) shouldSell(position entity.TransactionInstruction, curren
 			return true, "confidence dropped significantly"
 		}
 	}
+	if m.signalLost(position.Ticker, now) {
+		return true, "no live signal"
+	}
 	return false, ""
+}
+
+// signalLost reports whether every signal for ticker has been absent for at
+// least the configured grace period.  The first observation only starts the
+// timer; a position is never sold on the same check that the signal disappears.
+func (m *TradeMonitor) signalLost(ticker string, now time.Time) bool {
+	if m.signalLossGrace <= 0 || m.bucket == nil {
+		return false
+	}
+	if m.bucket.HasSignals(ticker) {
+		m.mu.Lock()
+		delete(m.missingSince, ticker)
+		m.mu.Unlock()
+		return false
+	}
+
+	m.mu.Lock()
+	since, seen := m.missingSince[ticker]
+	if !seen {
+		m.missingSince[ticker] = now
+		m.mu.Unlock()
+		return false
+	}
+	m.mu.Unlock()
+	return now.Sub(since) >= m.signalLossGrace
 }
 
 func (m *TradeMonitor) sellPosition(position entity.TransactionInstruction, currentPrice float64, reason string) {
@@ -238,6 +293,7 @@ func (m *TradeMonitor) sellPosition(position entity.TransactionInstruction, curr
 	// the meantime, leave it alone.
 	if active, ok := m.positions[position.Ticker]; ok && samePosition(active, position) {
 		delete(m.positions, position.Ticker)
+		delete(m.missingSince, position.Ticker)
 		m.stats.ClosedTrades++
 		m.stats.RealisedPnL += pnl
 		if pnl >= 0 {

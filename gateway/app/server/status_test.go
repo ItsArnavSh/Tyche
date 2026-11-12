@@ -13,6 +13,26 @@ import (
 	"gateway/app/util/transaction/paper"
 )
 
+func TestPortfolioEquityMarksHoldings(t *testing.T) {
+	prod := fakeval.NewFakeValGenWithSymbols([]string{"A"}, 10, 100)
+	prod.SetPrice("A", 110)
+	ledger := paper.NewPaperTrade(100_000)
+	if err := ledger.Process(entity.TransactionInstruction{
+		Ticker: "A", Action: entity.BUY, Quantity: 10, Price: 100,
+	}); err != nil {
+		t.Fatal(err)
+	}
+	s := &Server{ledger: ledger, producer: prod}
+	if got := s.portfolioEquity(); got != 100_100 {
+		t.Fatalf("equity = %.2f, want 100,100", got)
+	}
+
+	prod.SetPrice("A", 0)
+	if got := s.portfolioEquity(); got != 100_000 {
+		t.Fatalf("fallback equity = %.2f, want 100,000", got)
+	}
+}
+
 func TestSystemState(t *testing.T) {
 	now := time.Now()
 	running := status.NewStore()
@@ -71,8 +91,8 @@ func TestStatusSnapshotReflectsLedgerMonitorAndBucket(t *testing.T) {
 			Symbols:    []string{"A", "B"},
 			Decision: config.DecisionSettings{
 				MinConfidence: 0.7, MaxPositions: 5, MaxPositionFraction: 0.15,
-				StopLossPercent: 0.05, TakeProfitPercent: 0.1,
-				HoldDuration: time.Hour, RebuyCooldown: time.Minute,
+				CashReserveFraction: 0.02, StopLossPercent: 0.05, TakeProfitPercent: 0.1,
+				HoldDuration: time.Hour, SignalLossGrace: 5 * time.Minute, RebuyCooldown: time.Minute,
 			},
 		},
 		ledger:   ledger,
@@ -106,5 +126,11 @@ func TestStatusSnapshotReflectsLedgerMonitorAndBucket(t *testing.T) {
 	}
 	if snapshot.Stats.ActivePositions != 1 || snapshot.Stats.SignalsReceived != 1 {
 		t.Fatalf("stats = %+v", snapshot.Stats)
+	}
+	if snapshot.Risk.CashReserveFraction != 0.02 {
+		t.Fatalf("cash reserve = %v", snapshot.Risk.CashReserveFraction)
+	}
+	if snapshot.Risk.SignalLossGraceMS != (5 * time.Minute).Milliseconds() {
+		t.Fatalf("signal loss grace = %d", snapshot.Risk.SignalLossGraceMS)
 	}
 }

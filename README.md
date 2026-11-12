@@ -30,7 +30,7 @@ The diagram is the original high-level design; the current data flow is:
 
 1. **Go gateway (`gateway/`)** pulls candles from Yahoo, Kite, or the fake feed and pushes them to the Java core over gRPC. It owns ticker selection, history re-boots, quote polling, and the status API.
 2. **Java core (`core/`)** maintains a newest-first candle cache per `(symbol, candle size)`, runs fair scheduling across all jobs, executes the indicator functions, and publishes `Signal` JSON to Redis. It has no external HTTP or broker client. Tickers the core cannot apply are returned to the gateway, which re-boots them.
-3. **Go gateway decision/monitor loop** consumes signals, applies confidence/position/sizing/cooldown checks, executes paper trades, and manages stop-loss, take-profit, max-hold, and signal-based exits.
+3. **Go gateway decision/monitor loop** consumes signals, sizes equal-weight entries from portfolio equity, applies confidence/position/cooldown checks, executes paper trades, and manages stop-loss, take-profit, max-hold, signal-loss, and confidence-collapse exits.
 4. **Dashboard (`monitoring/client/`)** polls the Go status API and renders the live paper portfolio, decisions, fills, positions, signals, and system health.
 
 Communication is event-driven and designed for horizontal scalability. Fairness and backpressure live in the system, not in individual strategies.
@@ -282,10 +282,12 @@ The gateway reads market-data, execution, and status settings. The core reads on
 | `TYCHE_INITIAL_CASH` | `100000` | gateway | Paper account starting cash |
 | `TYCHE_PAPER_FEE_BPS` | `0` | gateway | Paper fill fee in basis points |
 | `TYCHE_MIN_CONFIDENCE` | `0.70` | gateway | Minimum signal confidence |
-| `TYCHE_MAX_POSITIONS` | `5` | gateway | Concurrent paper positions |
-| `TYCHE_MAX_POSITION_FRACTION` | `0.15` | gateway | Max fraction of equity per entry |
+| `TYCHE_MAX_POSITIONS` | `10` | gateway | Target concurrent equal-weight paper positions |
+| `TYCHE_MAX_POSITION_FRACTION` | `0.15` | gateway | Upper bound on a single entry, as a fraction of equity |
+| `TYCHE_CASH_RESERVE_PCT` | `0.02` | gateway | Cash held back from position sizing for fees and rounding |
 | `TYCHE_STOP_LOSS_PCT` / `TAKE_PROFIT_PCT` | `0.05` / `0.10` | gateway | Exit thresholds (0 disables) |
-| `TYCHE_HOLD_MS` | `86400000` | gateway | Maximum holding time |
+| `TYCHE_HOLD_MS` | `14400000` | gateway | Hard maximum holding time (4h); signal-loss exits normally fire sooner |
+| `TYCHE_SIGNAL_LOSS_GRACE_MS` | `300000` | gateway | Exit after this long with no live signal for the ticker |
 | `TYCHE_REBUY_COOLDOWN_MS` | `300000` | gateway | Per-symbol re-entry cooldown |
 | `TYCHE_SIGNAL_COOLDOWN_MS` | `60000` | core | Per-strategy/symbol signal cooldown |
 | `TYCHE_KITE_API_KEY` / `_SECRET` / `_ACCESS_TOKEN` | empty | gateway | Kite credentials |

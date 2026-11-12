@@ -29,6 +29,7 @@ type DecisionLayer struct {
 	settings config.DecisionSettings
 	interval time.Duration
 	recorder status.Recorder
+	equity   func() float64
 
 	mu      sync.Mutex
 	lastBuy map[string]time.Time
@@ -40,6 +41,10 @@ type Options struct {
 	Settings config.DecisionSettings
 	Interval time.Duration
 	Recorder status.Recorder
+	// Equity returns the current portfolio value (cash plus marked-to-market
+	// holdings).  Sizing uses equity rather than remaining cash so a fully
+	// invested account does not shrink every subsequent position.
+	Equity func() float64
 }
 
 func NewDecisionLayer(
@@ -67,6 +72,7 @@ func NewDecisionLayer(
 		settings:    opts.Settings,
 		interval:    opts.Interval,
 		recorder:    opts.Recorder,
+		equity:      opts.Equity,
 		lastBuy:     make(map[string]time.Time),
 	}
 }
@@ -129,11 +135,18 @@ func (d *DecisionLayer) tick() {
 		return
 	}
 
+	equity := budget
+	if d.equity != nil {
+		if value := d.equity(); value > 0 {
+			equity = value
+		}
+	}
+
 	choices := d.bucket.GetTopNinBudget(availableSlots*3, budget)
 	if len(choices) == 0 {
 		return
 	}
-	instructions, err := d.considerChoices(choices, budget, availableSlots)
+	instructions, err := d.considerChoices(choices, budget, equity, availableSlots)
 	if err != nil {
 		log.Printf("[DecisionMaking] %v", err)
 		return
@@ -148,9 +161,14 @@ func (d *DecisionLayer) tick() {
 func (d *DecisionLayer) considerChoices(
 	choices []entity.SignalConf,
 	budget float64,
+	equity float64,
 	availableSlots int,
 ) ([]entity.TransactionInstruction, error) {
 	if availableSlots <= 0 {
+		return nil, nil
+	}
+	maxPositions := d.settings.MaxPositions
+	if maxPositions <= 0 {
 		return nil, nil
 	}
 	qualified := make([]entity.SignalConf, 0, len(choices))
@@ -180,7 +198,27 @@ func (d *DecisionLayer) considerChoices(
 	if maxFraction <= 0 || maxFraction > 1 {
 		maxFraction = 0.15
 	}
-	positionBudget := budget * maxFraction
+	reserve := d.settings.CashReserveFraction
+	if reserve < 0 || reserve >= 1 {
+		reserve = 0
+	}
+	if equity <= 0 {
+		equity = budget
+	}
+	// Equal-weight target from portfolio equity, capped by the per-position
+	// fraction.  Using remaining cash here would shrink every new position as
+	// the account gets invested.  The reserve leaves room for fees/rounding.
+	positionBudget := equity * (1 - reserve) / float64(maxPositions)
+	if fractionCap := equity * maxFraction; positionBudget > fractionCap {
+		positionBudget = fractionCap
+	}
+	if positionBudget <= 0 {
+		return nil, nil
+	}
+	spendableCash := budget - equity*reserve
+	if spendableCash <= 0 {
+		return nil, nil
+	}
 	stopLoss := d.settings.StopLossPercent
 	if stopLoss <= 0 || stopLoss >= 1 {
 		stopLoss = 0.05
@@ -191,11 +229,11 @@ func (d *DecisionLayer) considerChoices(
 	}
 	hold := d.settings.HoldDuration
 	if hold <= 0 {
-		hold = 24 * time.Hour
+		hold = 4 * time.Hour
 	}
 
 	now := time.Now()
-	remainingCash := budget
+	remainingCash := spendableCash
 	instructions := make([]entity.TransactionInstruction, 0, len(qualified))
 	for _, choice := range qualified {
 		price := d.bucket.Producer.GetCurrentValue(choice.Name)
@@ -232,8 +270,10 @@ func (d *DecisionLayer) considerChoices(
 			Reason:     fmt.Sprintf("aggregate confidence %.1f%%", choice.ResultantConf*100),
 			MaxVal:     price * (1 + takeProfit),
 			MinValSell: price * (1 - stopLoss),
-			SellAfter:  now.Add(hold),
-			OpenedAt:   now,
+			// Strip Go's monotonic reading so the hold deadline is wall-clock
+			// based and still expires if the host suspends.
+			SellAfter: now.Add(hold).Round(0),
+			OpenedAt:  now.Round(0),
 		})
 		remainingCash -= cost
 		if remainingCash <= 0 {

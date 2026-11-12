@@ -143,3 +143,116 @@ func TestCooldown(t *testing.T) {
 		t.Fatal("zero cooldown should disable the check")
 	}
 }
+
+func TestDecisionSizesFromEquityNotRemainingCash(t *testing.T) {
+	prod := fakeval.NewFakeValGenWithSymbols([]string{"A", "B"}, 10, 100)
+	prod.SetPrice("A", 100)
+	prod.SetPrice("B", 100)
+	b := bucket.NewBucket(prod)
+	ledger := paper.NewPaperTrade(100_000)
+	mon := monitor.NewTradeMonitor(ledger, b)
+	signals := make(chan entity.Signal)
+
+	existing := entity.TransactionInstruction{
+		Ticker: "A", Action: entity.BUY, Quantity: 400, Price: 100,
+		SellAfter: time.Now().Add(time.Hour),
+	}
+	if err := ledger.Process(existing); err != nil {
+		t.Fatal(err)
+	}
+	if !mon.AddPosition(existing) {
+		t.Fatal("existing position not registered")
+	}
+	b.SignalBucket(entity.Signal{Name: "B", Strategy: "rsi", Size: entity.HOUR1, Confidence: 0.9})
+
+	settings := defaultSettings()
+	settings.MaxPositions = 2
+	settings.MaxPositionFraction = 0.5
+	settings.CashReserveFraction = 0
+	d := NewDecisionLayer(ledger, b, signals, mon, Options{
+		Settings: settings,
+		Interval: time.Second,
+		Equity: func() float64 {
+			snapshot := ledger.Snapshot()
+			equity := snapshot.Cash
+			for _, holding := range snapshot.Positions {
+				price := prod.GetCurrentValue(holding.Ticker)
+				if price <= 0 {
+					price = holding.AvgPrice
+				}
+				equity += price * float64(holding.Quantity)
+			}
+			return equity
+		},
+	})
+
+	d.tick()
+
+	position, ok := ledger.Position("B")
+	if !ok {
+		t.Fatal("B was not bought")
+	}
+	if position.Quantity != 500 {
+		t.Fatalf("B quantity = %d, want 500 (50%% of equity, not 30%% of cash)", position.Quantity)
+	}
+}
+
+func TestDecisionUsesEqualWeightForMaxPositions(t *testing.T) {
+	symbols := []string{"A", "B", "C", "D", "E", "F", "G", "H", "I", "J"}
+	prod := fakeval.NewFakeValGenWithSymbols(symbols, 10, 100)
+	for _, symbol := range symbols {
+		prod.SetPrice(symbol, 100)
+	}
+	b := bucket.NewBucket(prod)
+	ledger := paper.NewPaperTrade(100_000)
+	mon := monitor.NewTradeMonitor(ledger, b)
+	signals := make(chan entity.Signal)
+
+	settings := defaultSettings()
+	settings.MaxPositions = 10
+	settings.MaxPositionFraction = 0.15
+	settings.CashReserveFraction = 0.02
+	settings.RebuyCooldown = 0
+	d := NewDecisionLayer(ledger, b, signals, mon, Options{
+		Settings: settings,
+		Interval: time.Second,
+		Equity: func() float64 {
+			snapshot := ledger.Snapshot()
+			equity := snapshot.Cash
+			for _, holding := range snapshot.Positions {
+				price := prod.GetCurrentValue(holding.Ticker)
+				if price <= 0 {
+					price = holding.AvgPrice
+				}
+				equity += price * float64(holding.Quantity)
+			}
+			return equity
+		},
+	})
+
+	for i, symbol := range symbols {
+		b.SignalBucket(entity.Signal{
+			Name: symbol, Strategy: "rsi", Size: entity.HOUR1,
+			Confidence: 0.95 - float64(i)*0.01,
+		})
+	}
+
+	d.tick()
+
+	if mon.ActivePositionCount() != 10 {
+		t.Fatalf("active positions = %d, want 10", mon.ActivePositionCount())
+	}
+	for _, symbol := range symbols {
+		position, ok := ledger.Position(symbol)
+		if !ok {
+			t.Fatalf("%s was not bought", symbol)
+		}
+		if position.Quantity != 98 {
+			t.Fatalf("%s quantity = %d, want 98 (9,800 target)", symbol, position.Quantity)
+		}
+	}
+	cash, _ := ledger.GetBudget()
+	if cash != 2_000 {
+		t.Fatalf("cash = %.2f, want 2,000 reserve", cash)
+	}
+}

@@ -1,6 +1,9 @@
 package config
 
-import "testing"
+import (
+	"testing"
+	"time"
+)
 
 func TestUniverseDefaultsByDataSource(t *testing.T) {
 	t.Setenv("TYCHE_UNIVERSE", "")
@@ -43,5 +46,49 @@ func TestExplicitSymbolsAndLimits(t *testing.T) {
 	}
 	if cfg.BootWorkers != 1 {
 		t.Fatalf("boot workers = %d, want 1", cfg.BootWorkers)
+	}
+}
+
+func TestDecisionDefaultsAndOverrides(t *testing.T) {
+	t.Setenv("TYCHE_DATA_SOURCE", "fake")
+	t.Setenv("TYCHE_SYMBOLS", "A.NS")
+	t.Setenv("TYCHE_MAX_POSITIONS", "")
+	t.Setenv("TYCHE_MAX_POSITION_FRACTION", "")
+	t.Setenv("TYCHE_CASH_RESERVE_PCT", "")
+	t.Setenv("TYCHE_HOLD_MS", "")
+	t.Setenv("TYCHE_SIGNAL_LOSS_GRACE_MS", "")
+
+	cfg := Load()
+	if cfg.Decision.MaxPositions != 10 {
+		t.Fatalf("max positions = %d, want 10", cfg.Decision.MaxPositions)
+	}
+	if cfg.Decision.CashReserveFraction != 0.02 {
+		t.Fatalf("cash reserve = %v, want 0.02", cfg.Decision.CashReserveFraction)
+	}
+	if cfg.Decision.HoldDuration != 4*time.Hour {
+		t.Fatalf("hold duration = %v, want 4h", cfg.Decision.HoldDuration)
+	}
+	if cfg.Decision.SignalLossGrace != 5*time.Minute {
+		t.Fatalf("signal loss grace = %v, want 5m", cfg.Decision.SignalLossGrace)
+	}
+
+	t.Setenv("TYCHE_MAX_POSITIONS", "7")
+	t.Setenv("TYCHE_MAX_POSITION_FRACTION", "0.12")
+	t.Setenv("TYCHE_CASH_RESERVE_PCT", "0.05")
+	t.Setenv("TYCHE_HOLD_MS", "2h")
+	t.Setenv("TYCHE_SIGNAL_LOSS_GRACE_MS", "90s")
+
+	cfg = Load()
+	if cfg.Decision.MaxPositions != 7 || cfg.Decision.MaxPositionFraction != 0.12 {
+		t.Fatalf("position settings = %+v", cfg.Decision)
+	}
+	if cfg.Decision.CashReserveFraction != 0.05 {
+		t.Fatalf("cash reserve = %v", cfg.Decision.CashReserveFraction)
+	}
+	if cfg.Decision.HoldDuration != 2*time.Hour {
+		t.Fatalf("hold duration = %v", cfg.Decision.HoldDuration)
+	}
+	if cfg.Decision.SignalLossGrace != 90*time.Second {
+		t.Fatalf("signal loss grace = %v", cfg.Decision.SignalLossGrace)
 	}
 }
