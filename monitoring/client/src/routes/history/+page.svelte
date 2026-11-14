@@ -243,11 +243,18 @@
 
 	async function request<T>(path: string, body: unknown): Promise<T> {
 		const base = historyURL.replace(/\/$/, '');
-		const response = await fetch(`${base}${path}`, {
-			method: 'POST',
-			headers: { 'Content-Type': 'application/json' },
-			body: JSON.stringify(body)
-		});
+		let response: Response;
+		try {
+			response = await fetch(`${base}${path}`, {
+				method: 'POST',
+				headers: { 'Content-Type': 'application/json' },
+				body: JSON.stringify(body)
+			});
+		} catch {
+			throw new Error(
+				`History API is unreachable at ${base}. Start it with "make history" or "docker compose up history", then retry.`
+			);
+		}
 		const text = await response.text();
 		let document: { error?: string } = {};
 		try {
