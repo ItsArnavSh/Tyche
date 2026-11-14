@@ -13,7 +13,7 @@ TMUX_ATTACH ?= 1
 ENV_FILE ?= .env
 ENV_PATH := $(abspath $(ENV_FILE))
 
-.PHONY: help build build-core build-gateway dashboard tmux tmux-attach tmux-kill \
+.PHONY: help build build-core build-gateway dashboard history tmux tmux-attach tmux-kill \
 	test test-java test-go test-python test-dashboard proto backtest run up down \
 	universe logs clean
 
@@ -24,7 +24,8 @@ help:
 	@echo "  make test-dashboard  Type-check and build the Svelte dashboard"
 	@echo "  make proto        Regenerate Go and Java stubs from gateway/proto/stockrec.proto"
 	@echo "  make dashboard    Run the dashboard dev server (expects status API on :8080)"
-	@echo "  make tmux         Start Redis, core, gateway and dashboard in tmux"
+	@echo "  make tmux         Start Redis, core, gateway, history and dashboard in tmux"
+	@echo "  make history      Run the History replay API on :8090"
 	@echo "  make tmux-attach  Attach to the Tyche tmux session"
 	@echo "  make tmux-kill    Stop the Tyche tmux session"
 	@echo "  make backtest     Run a real-data backtest (SYMBOLS/PERIOD/STRATEGY/CASH)"
@@ -44,6 +45,11 @@ build-gateway:
 dashboard:
 	cd monitoring/client && npm run dev
 
+history:
+	@set -a; [ ! -f "$(ENV_PATH)" ] || . "$(ENV_PATH)"; set +a; \
+	REDIS_URL=$${REDIS_URL:-redis://127.0.0.1:6379/1} HISTORY_PORT=$${HISTORY_PORT:-8090} \
+		$(PYTHON) -m history.server
+
 # Start all local services in one tmux session. Redis is skipped when a local
 # instance is already listening; the gateway waits for it before starting.
 tmux:
@@ -57,9 +63,11 @@ tmux:
 			bash -c 'set -a; [ ! -f "$(ENV_PATH)" ] || . "$(ENV_PATH)"; set +a; export PATH="$(PATH)"; exec ./gradlew :app:run --no-daemon'; \
 		$(TMUX_BIN) new-window -t "$(TMUX_SESSION):2" -n gateway -c "$(CURDIR)/gateway" \
 			bash -c 'set -a; [ ! -f "$(ENV_PATH)" ] || . "$(ENV_PATH)"; set +a; export PATH="$(PATH)"; until redis-cli -h 127.0.0.1 -p 6379 ping >/dev/null 2>&1; do echo "Waiting for Redis on 127.0.0.1:6379..."; sleep 1; done; exec go run .'; \
-		$(TMUX_BIN) new-window -t "$(TMUX_SESSION):3" -n dashboard -c "$(CURDIR)/monitoring/client" \
+		$(TMUX_BIN) new-window -t "$(TMUX_SESSION):3" -n history -c "$(CURDIR)" \
+			bash -c 'set -a; [ ! -f "$(ENV_PATH)" ] || . "$(ENV_PATH)"; set +a; export PATH="$(PATH)"; until redis-cli -h 127.0.0.1 -p 6379 ping >/dev/null 2>&1; do echo "Waiting for Redis on 127.0.0.1:6379..."; sleep 1; done; export REDIS_URL="$${TYCHE_HISTORY_REDIS_URL:-redis://127.0.0.1:6379/1}"; export HISTORY_CACHE_BACKEND="$${HISTORY_CACHE_BACKEND:-redis}"; export HISTORY_PORT="$${TYCHE_HISTORY_PORT:-8090}"; exec $(PYTHON) -m history.server'; \
+		$(TMUX_BIN) new-window -t "$(TMUX_SESSION):4" -n dashboard -c "$(CURDIR)/monitoring/client" \
 			bash -c 'set -a; [ ! -f "$(ENV_PATH)" ] || . "$(ENV_PATH)"; set +a; export PATH="$(PATH)"; [ -d node_modules ] || npm ci; exec npm run dev -- --host'; \
-		for win in redis core gateway dashboard; do \
+		for win in redis core gateway history dashboard; do \
 			$(TMUX_BIN) set-option -w -t "$(TMUX_SESSION):$$win" remain-on-exit on; \
 		done; \
 		$(TMUX_BIN) select-window -t "$(TMUX_SESSION):gateway"; \
@@ -104,6 +112,7 @@ test-go:
 
 test-python:
 	$(PYTHON) -m unittest discover -s backtest/tests -v
+	$(PYTHON) -m unittest discover -s history/tests -v
 
 test-dashboard:
 	cd monitoring/client && npm run check && npm run build
@@ -143,5 +152,5 @@ logs:
 
 clean:
 	cd core && ./gradlew clean --no-daemon || true
-	rm -rf gateway/bin backtest/__pycache__ backtest/tests/__pycache__
+	rm -rf gateway/bin backtest/__pycache__ backtest/tests/__pycache__ history/__pycache__ history/tests/__pycache__
 	rm -rf monitoring/client/.svelte-kit monitoring/client/build

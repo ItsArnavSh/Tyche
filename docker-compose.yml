@@ -61,6 +61,26 @@ services:
       core:
         condition: service_healthy
 
+  history:
+    build:
+      context: .
+      dockerfile: history/Dockerfile
+    restart: unless-stopped
+    environment:
+      HISTORY_HOST: 0.0.0.0
+      HISTORY_PORT: "8090"
+      HISTORY_CACHE_BACKEND: redis
+      REDIS_URL: redis://redis:6379/1
+      HISTORY_CACHE_TTL: ${HISTORY_CACHE_TTL:-604800}
+      HISTORY_MAX_WORKERS: ${HISTORY_MAX_WORKERS:-8}
+      HISTORY_FETCH_TIMEOUT: ${HISTORY_FETCH_TIMEOUT:-15}
+      HISTORY_FETCH_RETRIES: ${HISTORY_FETCH_RETRIES:-3}
+    ports:
+      - "${TYCHE_HISTORY_PORT:-8090}:8090"
+    depends_on:
+      redis:
+        condition: service_healthy
+
   dashboard:
     build: ./monitoring/client
     restart: unless-stopped

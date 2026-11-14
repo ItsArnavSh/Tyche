@@ -4,15 +4,16 @@
 
 **Tyche** is named after the Greek goddess of fortune, embodying both good and bad luck. (Fun fact: the name was inspired during a God of War gaming session — it just made sense!)
 
-Tyche is a fully autonomous, real-time, distributed, load-balanced trading bot. The **Go gateway owns the entire market-data plane**: it streams real Indian market data, pushes candles into the Java core, consumes strategy signals through Redis, and executes them in a thread-safe **paper-trading** ledger. The Java core is compute-only: scheduling, indicator math, and strategy execution. A standalone Python backtester lets you evaluate the same strategy families on real history before letting them run.
+Tyche is a fully autonomous, real-time, distributed, load-balanced trading bot. The **Go gateway owns the entire live market-data plane**: it streams real Indian market data, pushes candles into the Java core, consumes strategy signals through Redis, and executes them in a thread-safe **paper-trading** ledger. The Java core is compute-only: scheduling, indicator math, and strategy execution. A standalone Python backtester and a separate History service provide offline research: fetch a session into Redis, replay it through the same strategy/risk arguments, and animate the result in the dashboard.
 
 > **Paper trading only.** The autonomous decision path routes every fill to an in-memory paper ledger. There is no live order adapter. Do not point this at a real account without adding explicit execution, risk, and monitoring layers.
 
 ## Features
 
-- **One data-plane owner** — the Go gateway is the only component that talks to Yahoo Finance, Kite Connect, or the synthetic feed. The Java core never makes outbound market-data or broker calls.
+- **One live data-plane owner** — the Go gateway is the only live component that talks to Yahoo Finance, Kite Connect, or the synthetic feed. The Java core never makes outbound market-data or broker calls. The offline History service is isolated from the live loop and never places orders.
 - **Real market data** — Yahoo Finance chart/spark endpoints by default; Zerodha Kite Connect v3 when credentials are supplied. The symbol universe is resolved automatically from NSE's official index-constituent CSVs (`nifty50` through `nifty500`, plus mid/small-cap indices), with `TYCHE_SYMBOLS` as an explicit override. The `fake` source remains available for offline demos.
 - **Autonomous loop** — bootstrap history → roll updates → indicators/signals → Redis signal queue → confidence/risk checks → paper fills → stop-loss/take-profit/time exits. No human input required.
+- **History replay** — fetch one session plus a warmup window into a Redis cache and replay it through the backtest engine from the dashboard, with a speed control for the precomputed timeline.
 - **Cross-language boundary** — the single proto source lives in `gateway/proto/stockrec.proto`. Java stubs are generated from it and committed for clean-checkout builds.
 - **Live status API** — the Go gateway exposes an in-memory JSON snapshot of decisions, fills, cash, equity, open positions, closed trades, signals, and feed health. No separate monitoring service.
 - **Fair scheduling** — boot jobs pre-empt rolling jobs, rolling work is FIFO per priority, and a bounded per-ticker candle cache prevents memory growth.
@@ -28,10 +29,11 @@ Tyche is a fully autonomous, real-time, distributed, load-balanced trading bot. 
 
 The diagram is the original high-level design; the current data flow is:
 
-1. **Go gateway (`gateway/`)** pulls candles from Yahoo, Kite, or the fake feed and pushes them to the Java core over gRPC. It owns ticker selection, history re-boots, quote polling, and the status API.
+1. **Go gateway (`gateway/`)** pulls live candles from Yahoo, Kite, or the fake feed and pushes them to the Java core over gRPC. It owns ticker selection, history re-boots, quote polling, and the status API.
 2. **Java core (`core/`)** maintains a newest-first candle cache per `(symbol, candle size)`, runs fair scheduling across all jobs, executes the indicator functions, and publishes `Signal` JSON to Redis. It has no external HTTP or broker client. Tickers the core cannot apply are returned to the gateway, which re-boots them.
 3. **Go gateway decision/monitor loop** consumes signals, sizes equal-weight entries from portfolio equity, applies confidence/position/cooldown checks, executes paper trades, and manages stop-loss, take-profit, max-hold, signal-loss, and confidence-collapse exits.
-4. **Dashboard (`monitoring/client/`)** polls the Go status API and renders the live paper portfolio, decisions, fills, positions, signals, and system health.
+4. **Dashboard (`monitoring/client/`)** polls the Go status API and renders the live paper portfolio, decisions, fills, positions, signals, and system health. Its `/history` route calls the Python History service, fetches one cached session, and plays back the same strategy/risk arguments with adjustable speed.
+5. **History service (`history/`)** owns offline session fetching, Redis frame caching, warmup slicing, and replay orchestration. It reuses the Python backtest engine, has no Java-core or Redis signal-queue dependency, and never touches execution.
 
 Communication is event-driven and designed for horizontal scalability. Fairness and backpressure live in the system, not in individual strategies.
 
@@ -48,7 +50,8 @@ docker compose up --build
 
 - Core gRPC: internal `core:50051`
 - Status API: http://localhost:8080/api/status
-- Dashboard: http://localhost:5173
+- History API: http://localhost:8090/api/history/health
+- Dashboard: http://localhost:5173 (History: http://localhost:5173/history)
 
 The default data source is Yahoo, the default universe is the official NIFTY 500 constituent list (resolved automatically at startup), and the default mode is paper trading. Redis is required for gateway signal transport.
 
@@ -56,7 +59,7 @@ The default data source is Yahoo, the default universe is the official NIFTY 500
 
 Requirements: Java 21, Go 1.25+, Node 20+, Python 3.10+, tmux, and Redis (for the full loop).
 
-The one-command local stack starts Redis, the Java core, the Go gateway, and the Svelte dashboard in a single tmux session:
+The one-command local stack starts Redis, the Java core, the Go gateway, the History API, and the Svelte dashboard in a single tmux session:
 
 ```bash
 cp .env.example .env   # optional; the Makefile also works without it
@@ -64,7 +67,7 @@ make tmux              # start and attach to session "tyche"
 make tmux-kill         # stop every window
 ```
 
-`make tmux` loads `.env` in each window, reuses an existing Redis on `127.0.0.1:6379`, waits for Redis before starting the gateway, and attaches to an existing session instead of creating a duplicate. Set `TMUX_ATTACH=0` for noninteractive startup, or use `TMUX_SESSION=name` to isolate a second stack.
+`make tmux` loads `.env` in each window, reuses an existing Redis on `127.0.0.1:6379`, waits for Redis before starting the gateway and History service, and attaches to an existing session instead of creating a duplicate. The History service uses Redis logical DB 1 (`redis://127.0.0.1:6379/1`) so replay candles cannot collide with the signal transport. Set `TMUX_ATTACH=0` for noninteractive startup, or use `TMUX_SESSION=name` to isolate a second stack.
 
 ### Real market data
 
@@ -105,20 +108,24 @@ cd core && ./gradlew :app:run
 # terminal 3 — Go gateway (Yahoo data, status API on :8080)
 cd gateway && go run .
 
-# terminal 4 — dashboard (optional; polls the gateway)
+# terminal 4 — History replay API (optional; expects Redis on :6379)
+make history
+
+# terminal 5 — dashboard (optional; polls the gateway and History API)
 cd monitoring/client && npm install && npm run dev
 ```
 
 Useful shortcuts:
 
 ```bash
-make tmux          # Redis + core + gateway + dashboard in tmux
+make tmux          # Redis + core + gateway + history + dashboard in tmux
 make tmux-attach   # attach to an existing tyche session
 make tmux-kill     # stop the tyche session
-make test          # Java + Go + Python suites
+make test          # Java + Go + Python (backtest + history) suites
 make test-dashboard  # dashboard type-check and production build
 make universe      # print the resolved NSE universe (UNIVERSE=nifty500)
 make backtest      # real-data backtest with the default universe
+make history       # History replay API on :8090
 make build         # installDist + gateway binary
 make proto         # regenerate Go and Java stubs from gateway/proto/stockrec.proto
 make up / down     # Docker Compose stack
@@ -251,6 +258,69 @@ Other sources:
 Exports: `--json-out metrics.json`, `--trades-out trades.csv`, `--equity-out equity.csv`.
 Data is cached under `~/.cache/tyche-backtest` (override with `--cache-dir`; an empty value disables caching).
 
+## History mode
+
+The dashboard has a **history mode** at `/history`. It fetches one selected session plus a warmup window, caches each symbol's candles in Redis, and replays the session through the same Python strategy and risk arguments used by the backtester. The engine computes signals over the warmup but only executes and returns bars for the target date, so indicators are warm without leaking trades from earlier days.
+
+Start the service locally:
+
+```bash
+python3 -m pip install -r history/requirements.txt   # once, for the redis client
+make history             # listens on :8090, cache DB redis://127.0.0.1:6379/1
+# or, with a custom Redis URL:
+REDIS_URL=redis://127.0.0.1:6379/1 python3 -m history.server
+```
+
+If Redis or the `redis` client is unavailable, the service logs a warning and falls back to an in-process memory cache; Docker Compose always uses Redis DB 1.
+
+Open <http://localhost:5173/history>, choose a date, symbols, interval, strategy, and risk arguments, then use **fetch & cache** or **fetch + replay**. The replay response is a precomputed per-bar timeline (equity, cash, open positions, and buy/sell events), so playback speed is a browser concern: `1×`, `5×`, `25×`, `100×`, or `max` bars per second. There is no server-side sleep.
+
+The History service is also exposed by Docker Compose:
+
+```bash
+docker compose up --build history
+curl -s http://localhost:8090/api/history/health | jq
+```
+
+Override the dashboard's History endpoint with `?history=http://host:port` (for example when the API is behind a proxy).
+
+### History API
+
+| Method | Path | Purpose |
+| --- | --- | --- |
+| `GET` | `/api/history/health` | Service and cache health |
+| `GET` | `/api/history/strategies` | Strategy names, aliases, and parameter defaults |
+| `GET` | `/api/history/cache` | Redis cache health and key count |
+| `POST` | `/api/history/fetch` | Fetch and cache a session plus warmup; returns dataset metadata |
+| `POST` | `/api/history/replay` | Fetch (or read cache), run the windowed backtest, and return the replay timeline |
+| `POST` | `/api/history/cache/clear` | Delete History cache keys (development convenience) |
+
+Example:
+
+```bash
+curl -s -X POST http://localhost:8090/api/history/replay \
+  -H 'Content-Type: application/json' \
+  -d '{
+    "date": "2026-11-13",
+    "symbols": "RELIANCE.NS,TCS.NS,HDFCBANK.NS,INFY.NS,ICICIBANK.NS",
+    "interval": "5m",
+    "warmup_days": 10,
+    "strategy": "sma",
+    "params": {"fast": 20, "slow": 50},
+    "cash": 100000,
+    "max_positions": 10,
+    "position_fraction": 0.15,
+    "stop_loss_pct": 0.05,
+    "take_profit_pct": 0.10,
+    "max_hold_bars": 48,
+    "fee_bps": 0,
+    "slippage_bps": 0,
+    "close_at_end": true
+  }' | jq '.bars, .metrics.total_return, (.replay | length)'
+```
+
+Yahoo intraday history is limited — `1m` bars are typically available only for the last 30 days, and older dates may return an empty response. The API reports missing symbols per request rather than blocking the whole replay. There is intentionally no market-open/closed check; a session is considered replayable if Yahoo returns bars for the requested window.
+
 ## Configuration
 
 The gateway reads market-data, execution, and status settings. The core reads only engine/Redis settings. See [`.env.example`](.env.example) for the full list. The most important ones:
@@ -279,6 +349,11 @@ The gateway reads market-data, execution, and status settings. The core reads on
 | `TYCHE_REBOOT_MAX_ATTEMPTS` | `0` | gateway | Attempt cap for transient boot failures; `0` retries indefinitely. Permanent HTTP 4xx failures are blacklisted immediately |
 | `TYCHE_STATUS_ADDR` | `:8080` | gateway | Status API listen address (Compose fixes this at `:8080`) |
 | `TYCHE_STATUS_PORT` | `8080` | Compose | Host port mapped to the status API |
+| `TYCHE_HISTORY_PORT` | `8090` | Compose | Host port mapped to the History API |
+| `HISTORY_CACHE_BACKEND` | `redis` | history | `redis` (Compose/local default) or `memory` for tests |
+| `REDIS_URL` | `redis://localhost:6379/1` | history | Redis URL; Compose sets `redis://redis:6379/1` |
+| `HISTORY_CACHE_TTL` | `604800` | history | Cached frame expiry in seconds |
+| `HISTORY_MAX_WORKERS` | `8` | history | Parallel Yahoo downloads for an uncached session |
 | `TYCHE_INITIAL_CASH` | `100000` | gateway | Paper account starting cash |
 | `TYCHE_PAPER_FEE_BPS` | `0` | gateway | Paper fill fee in basis points |
 | `TYCHE_MIN_CONFIDENCE` | `0.70` | gateway | Minimum signal confidence |
@@ -300,7 +375,8 @@ Durations accept plain milliseconds or Go-style strings such as `5s`/`1m` in the
 core/       Java 21 engine: scheduling, cache, indicators, strategies, gRPC boundary
 gateway/    Go data plane + execution: providers, gRPC client, risk, ledger, monitor, status API
 backtest/   Python research: data loaders, strategies, engine, metrics, CLI, tests
-monitoring/ Svelte dashboard (reads only the Go status API)
+history/    Python History service: Yahoo range fetch, Redis frame cache, replay API, tests
+monitoring/ Svelte dashboard: live status and History replay UI
 ```
 
 ## Testing
@@ -312,8 +388,9 @@ cd core && ./gradlew :app:test
 # Go (race detector + vet)
 cd gateway && go vet ./... && go test -race ./...
 
-# Python
+# Python (backtester + History service)
 python3 -m unittest discover -s backtest/tests -v
+python3 -m unittest discover -s history/tests -v
 
 # Dashboard
 cd monitoring/client && npm run check && npm run build

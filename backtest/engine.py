@@ -110,6 +110,9 @@ class BacktestResult:
     strategy: str
     symbols: list[str]
     config: BacktestConfig = field(repr=False)
+    # Per-bar portfolio snapshots for the History replay UI.  Empty unless
+    # ``record_replay=True`` was passed to :class:`Backtest`.
+    replay: list[dict[str, Any]] = field(default_factory=list)
 
     def trades_frame(self) -> pd.DataFrame:
         if not self.trades:
@@ -142,20 +145,39 @@ class Backtest:
         prices: dict[str, pd.DataFrame],
         strategy: Strategy,
         config: BacktestConfig | None = None,
+        *,
+        start: Any | None = None,
+        end: Any | None = None,
+        record_replay: bool = False,
     ) -> None:
         if not prices:
             raise ValueError("prices must contain at least one symbol")
         self.prices = {symbol: frame.sort_index() for symbol, frame in prices.items()}
         self.strategy = strategy
         self.config = config or BacktestConfig()
+        # ``start`` is inclusive and ``end`` is exclusive.  Signals are still
+        # computed over the full warmup frame; only execution is windowed.
+        self.start = start
+        self.end = end
+        self.record_replay = record_replay
+        self._events: list[dict[str, Any]] = []
+        self._replay: list[dict[str, Any]] = []
 
     def run(self) -> BacktestResult:
+        self._events = []
+        self._replay = []
         data = self._prepare()
         calendar = pd.DatetimeIndex(
             sorted(set().union(*(set(item.index) for item in data.values())))
         )
+        if self.start is not None:
+            start = self._bound(self.start)
+            calendar = calendar[calendar >= start]
+        if self.end is not None:
+            end = self._bound(self.end)
+            calendar = calendar[calendar < end]
         if len(calendar) < 2:
-            raise ValueError("need at least two bars to backtest")
+            raise ValueError("need at least two bars in the replay window")
 
         cfg = self.config
         cash = float(cfg.initial_cash)
@@ -165,6 +187,7 @@ class Backtest:
         trades: list[Trade] = []
         last_close: dict[str, float] = {}
         records: list[dict[str, Any]] = []
+        event_cursor = 0
 
         for date in calendar:
             available = {symbol: item for symbol, item in data.items() if date in item.positions}
@@ -232,16 +255,22 @@ class Backtest:
                 for symbol, position in positions.items()
             )
             equity = cash + positions_value
-            records.append(
-                {
-                    "timestamp": date,
-                    "equity": equity,
-                    "cash": cash,
-                    "positions_value": positions_value,
-                    "exposure": positions_value / equity if equity > 0 else 0.0,
-                    "open_positions": len(positions),
-                }
-            )
+            record: dict[str, Any] = {
+                "timestamp": date,
+                "equity": equity,
+                "cash": cash,
+                "positions_value": positions_value,
+                "exposure": positions_value / equity if equity > 0 else 0.0,
+                "open_positions": len(positions),
+            }
+            if self.record_replay:
+                record["positions"] = [
+                    self._position_snapshot(position)
+                    for position in (positions[name] for name in sorted(positions))
+                ]
+                record["events"] = self._events[event_cursor:]
+                event_cursor = len(self._events)
+            records.append(record)
 
         # Liquidate leftovers so metrics and cash reconcile with realised P&L.
         if positions and cfg.close_at_end:
@@ -257,9 +286,16 @@ class Backtest:
                 records[-1]["equity"] = cash
                 records[-1]["exposure"] = 0.0
                 records[-1]["open_positions"] = 0
+                if self.record_replay:
+                    records[-1]["positions"] = []
+                    records[-1]["events"] = (
+                        records[-1].get("events", []) + self._events[event_cursor:]
+                    )
 
         equity_frame = pd.DataFrame.from_records(records).set_index("timestamp")
         equity_frame.index.name = "timestamp"
+        if self.record_replay:
+            self._replay = records
         metrics = compute_metrics(
             equity_frame,
             trades,
@@ -274,9 +310,39 @@ class Backtest:
             strategy=self.strategy.describe(),
             symbols=sorted(self.prices),
             config=cfg,
+            replay=self._replay if self.record_replay else [],
         )
 
     # ------------------------------------------------------------------ helpers
+
+    def _bound(self, value: Any) -> pd.Timestamp:
+        stamp = pd.Timestamp(value)
+        sample = next(iter(self.prices.values()))
+        if isinstance(sample.index, pd.DatetimeIndex) and sample.index.tz is not None:
+            if stamp.tzinfo is None:
+                return stamp.tz_localize(sample.index.tz)
+            return stamp.tz_convert(sample.index.tz)
+        if stamp.tzinfo is not None:
+            return stamp.tz_convert(None)
+        return stamp
+
+    @staticmethod
+    def _position_snapshot(position: Position) -> dict[str, Any]:
+        last = position.last_price or position.entry_price
+        market_value = last * position.quantity
+        pnl = (last - position.entry_price) * position.quantity - position.entry_fee
+        return {
+            "symbol": position.symbol,
+            "quantity": position.quantity,
+            "entry_price": position.entry_price,
+            "last_price": last,
+            "market_value": market_value,
+            "pnl": pnl,
+            "pnl_pct": pnl / position.cost_basis if position.cost_basis else 0.0,
+            "bars_held": position.bars_held,
+            "stop_loss": position.stop_price,
+            "take_profit": position.target_price,
+        }
 
     def _prepare(self) -> dict[str, _SymbolData]:
         prepared: dict[str, _SymbolData] = {}
@@ -395,7 +461,19 @@ class Backtest:
             target_price=target_price,
             last_price=fill_price,
         )
-        _ = score  # retained for future score-weighted sizing
+        if self.record_replay:
+            self._events.append(
+                {
+                    "type": "buy",
+                    "at": date.isoformat(),
+                    "symbol": symbol,
+                    "quantity": quantity,
+                    "price": fill_price,
+                    "fee": fee,
+                    "score": score,
+                    "reason": "signal",
+                }
+            )
         return cash
 
     def _close_position(
@@ -432,4 +510,19 @@ class Backtest:
                 bars_held=position.bars_held,
             )
         )
+        if self.record_replay:
+            self._events.append(
+                {
+                    "type": "sell",
+                    "at": date.isoformat(),
+                    "symbol": symbol,
+                    "quantity": position.quantity,
+                    "price": fill_price,
+                    "fee": fee,
+                    "pnl": pnl,
+                    "pnl_pct": return_pct,
+                    "reason": reason,
+                    "bars_held": position.bars_held,
+                }
+            )
         return cash + notional - fee

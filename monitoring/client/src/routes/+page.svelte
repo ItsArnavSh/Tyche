@@ -363,6 +363,11 @@
 				<span class="rounded-md border border-white/[0.06] bg-white/[0.03] px-2 py-1 tabular-nums"
 					>up {uptime(data?.uptime_seconds)}</span
 				>
+				<a
+					href="/history"
+					class="rounded-md border border-indigo-400/20 bg-indigo-400/[0.08] px-2.5 py-1 text-indigo-200 transition hover:border-indigo-300/40 hover:text-white"
+					>history mode</a
+				>
 				<button
 					type="button"
 					onclick={refresh}

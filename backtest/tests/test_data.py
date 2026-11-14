@@ -10,6 +10,7 @@ import pandas as pd
 from backtest.data import (
     DataError,
     fetch_yahoo,
+    fetch_yahoo_range,
     load_csv,
     load_prices,
     normalize_symbol,
@@ -155,3 +156,47 @@ class DataTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class YahooRangeTests(unittest.TestCase):
+    def test_fetch_yahoo_range_uses_period_bounds_and_filters(self):
+        # Three 5-minute bars across two sessions.  Only the middle session
+        # should survive the inclusive-start/exclusive-end filter.
+        stamps = [
+            int(pd.Timestamp("2024-01-01 15:20", tz="Asia/Kolkata").timestamp()),
+            int(pd.Timestamp("2024-01-02 09:15", tz="Asia/Kolkata").timestamp()),
+            int(pd.Timestamp("2024-01-02 09:20", tz="Asia/Kolkata").timestamp()),
+            int(pd.Timestamp("2024-01-03 09:15", tz="Asia/Kolkata").timestamp()),
+        ]
+        payload = chart_payload(stamps, [100.0, 101.0, 102.0, 103.0])
+        with patch("backtest.data.requests.get", return_value=DummyResponse(payload=payload)) as getter:
+            frame = fetch_yahoo_range(
+                "RELIANCE",
+                start="2024-01-02",
+                end="2024-01-03",
+                interval="5m",
+            )
+        self.assertEqual(frame["close"].tolist(), [101.0, 102.0])
+        self.assertEqual(str(frame.index.tz), "Asia/Kolkata")
+        url = getter.call_args.args[0]
+        self.assertIn("period1=", url)
+        self.assertIn("period2=", url)
+        self.assertIn("interval=5m", url)
+        self.assertNotIn("range=", url)
+
+    def test_fetch_yahoo_range_rejects_empty_range(self):
+        payload = chart_payload(
+            [int(pd.Timestamp("2024-01-02 09:15", tz="Asia/Kolkata").timestamp())],
+            [100.0],
+        )
+        with patch("backtest.data.requests.get", return_value=DummyResponse(payload=payload)):
+            with self.assertRaises(DataError):
+                fetch_yahoo_range(
+                    "RELIANCE",
+                    start="2024-01-05",
+                    end="2024-01-06",
+                )
+
+    def test_fetch_yahoo_range_validates_order(self):
+        with self.assertRaises(ValueError):
+            fetch_yahoo_range("RELIANCE", start="2024-01-03", end="2024-01-02")

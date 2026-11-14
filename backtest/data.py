@@ -156,6 +156,53 @@ def fetch_yahoo(
     return frame
 
 
+def _as_kolkata(value: str | pd.Timestamp) -> pd.Timestamp:
+    stamp = pd.Timestamp(value)
+    if stamp.tzinfo is None:
+        return stamp.tz_localize("Asia/Kolkata")
+    return stamp.tz_convert("Asia/Kolkata")
+
+
+def fetch_yahoo_range(
+    symbol: str,
+    *,
+    start: str | pd.Timestamp,
+    end: str | pd.Timestamp,
+    interval: str = "5m",
+    suffix: str = DEFAULT_SUFFIX,
+    timeout: float = 15.0,
+    retries: int = 3,
+    base_url: str = "https://query1.finance.yahoo.com",
+    session: requests.Session | None = None,
+) -> pd.DataFrame:
+    """Download a bounded Yahoo range.
+
+    ``start`` is inclusive and ``end`` is exclusive.  Yahoo's ``period1`` /
+    ``period2`` parameters let the history service fetch a warmup window plus
+    one target session without downloading a multi-year history.
+    """
+    yahoo_symbol = normalize_symbol(symbol, suffix)
+    if not yahoo_symbol:
+        raise DataError("symbol must not be empty")
+    start_stamp = _as_kolkata(start)
+    end_stamp = _as_kolkata(end)
+    if end_stamp <= start_stamp:
+        raise ValueError("end must be after start")
+    url = (
+        f"{base_url.rstrip('/')}/v8/finance/chart/{requests.utils.quote(yahoo_symbol, safe='')}"
+        f"?interval={requests.utils.quote(interval)}"
+        f"&period1={int(start_stamp.timestamp())}"
+        f"&period2={int(end_stamp.timestamp())}"
+        "&includePrePost=false&events=div%2Csplits"
+    )
+    payload = _get_json(url, timeout=timeout, retries=retries, session=session)
+    frame = parse_yahoo_chart(payload, yahoo_symbol)
+    frame = frame[(frame.index >= start_stamp) & (frame.index < end_stamp)]
+    if frame.empty:
+        raise DataError(f"Yahoo returned no candles for {yahoo_symbol} in the requested range")
+    return frame
+
+
 def fetch_yfinance(
     symbol: str,
     *,

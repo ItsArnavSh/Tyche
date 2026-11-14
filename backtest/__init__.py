@@ -6,7 +6,7 @@ honest, next-bar-executed backtests so strategy changes can be evaluated before
 they reach the live signal pipeline.
 """
 
-from .data import fetch_yahoo, load_prices, normalize_symbol
+from .data import fetch_yahoo, fetch_yahoo_range, load_prices, normalize_symbol
 from .engine import Backtest, BacktestConfig, BacktestResult, Trade
 from .metrics import compute_metrics
 from .strategies import STRATEGIES, Strategy, build_strategy
@@ -21,6 +21,7 @@ __all__ = [
     "build_strategy",
     "compute_metrics",
     "fetch_yahoo",
+    "fetch_yahoo_range",
     "load_prices",
     "normalize_symbol",
 ]
